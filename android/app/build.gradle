@@ -83,7 +83,13 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0"
+        versionName "1.0"    
+        ndk {
+
+            // abiFilters "armeabi-v7a"
+            abiFilters "armeabi-v7a"
+        }
+
     }
     signingConfigs {
         debug {

@@ -15,13 +15,16 @@ class MainApplication : Application(), ReactApplication {
       packageList =
         PackageList(this).packages.apply {
           // Packages that cannot be autolinked yet can be added manually here, for example:
-          // add(MyReactNativePackage())
+          add(com.mahalaxmi_borewell.pdf.PdfPackage())
         },
     )
   }
 
   override fun onCreate() {
     super.onCreate()
+    try {
+      android.webkit.WebView.enableSlowWholeDocumentDraw()
+    } catch (_: Exception) {}
     loadReactNative(this)
   }
 }

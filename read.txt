@@ -1,0 +1,679 @@
+================================================================================
+           MAHALAXMI BOREWELL FINANCIAL MANAGEMENT & BILLING SYSTEM
+                             COMPLETE TECHNICAL & SYSTEM MANUAL
+================================================================================
+Application:        Mahalaxmi Borewell Financial Management
+Version:            1.0.0
+Platform:           React Native CLI (Android / iOS)
+Operating Mode:     100% Offline-First (Local SQLite Database)
+Organization:       Mahalaxmi Borewells & Pumps (Electricals & Mechanicals)
+Location:           At Post Hanbarwadi, Taluka Karveer, District Kolhapur, Maharashtra
+Contact Numbers:    8379918585, 8329533649, 7498236650
+================================================================================
+
+
+1. EXECUTIVE SUMMARY & PURPOSE
+--------------------------------------------------------------------------------
+The Mahalaxmi Borewell Financial Management application is an enterprise-grade,
+offline-first mobile billing, quotation, invoicing, and accounting solution
+specifically tailored for borewell drilling contractors, pump installation
+specialists, electrical fittings, and agricultural/industrial water supply businesses.
+
+Key Objectives:
+- Eliminate manual paper billing and static dotted line templates.
+- Maintain a sequential, system-controlled quotation and invoice register.
+- Multi-step structured quotation generation wizard (5 distinct stages).
+- Render pixel-perfect, authentic printed quotation documents with user-entered
+  specifications seamlessly placed into table rows.
+- Two-tier workflow: Quotation creation -> Invoice conversion with final adjustment.
+- Track business revenues, material expenses, technician charges, and client tasks.
+- Provide local cryptographic security without external cloud or internet reliance.
+
+
+2. CORE TECHNOLOGY STACK
+--------------------------------------------------------------------------------
+- Core Framework:       React Native 0.87.1 (React Native CLI)
+- Programming Language: TypeScript 5.0+ (Strict Type Checking)
+- Architecture:         Bridgeless Mode & Fabric (Modern React Native Runtime)
+- State Management:     Redux Toolkit (RTK) with typed useDispatch / useSelector
+- Navigation:           React Navigation v7 (Native Stack & Bottom Tabs)
+- Primary Database:     SQLite via @op-engineering/op-sqlite (Fast C++ SQLite engine)
+- Fast Storage:         @react-native-async-storage/async-storage
+- Hardware Security:    react-native-keychain (Encrypted local keystore)
+- Cryptographic Engine: react-native-get-random-values + PBKDF2 Password Hashing
+- Vector Graphics:      react-native-svg (Custom icons and interactive charts)
+- Testing Framework:    Jest 29+ with custom in-memory database audit harness
+
+
+3. OFFLINE-FIRST ARCHITECTURAL PRINCIPLES
+--------------------------------------------------------------------------------
+1. Zero Cloud Dependency:
+   The application requires no backend server, no REST API, no Firebase, and
+   no cloud database. All data operations are executed locally on device storage.
+
+2. Atomic Transactions:
+   Every quotation, bill, or invoice generation creates the header and all related
+   line items inside a single SQLite transaction (`db.runTransaction`). If any step
+   fails, the entire operation is automatically rolled back.
+
+3. Two-Tier Document Architecture:
+   - QUOTATION (Estimate / Bill): Generated during initial client assessment via
+     a 5-step wizard. Stored in `bills` and `bill_items`.
+   - INVOICE (Tax / Final Bill): Converted from an accepted quotation or created
+     directly. Stored as an immutable snapshot in `invoices` and `invoice_items`
+     with independent adjustment capabilities (`FinalInvoiceAdjustmentScreen`).
+
+4. Dual-Mode Visual Rendering:
+   - EDIT MODE: Clean card-based entry form with dedicated numeric, text, switch,
+     and dropdown inputs replacing every dotted line.
+   - VIEW MODE (`QuotationDocumentView`): The exact Mahalaxmi Borewell printed
+     quotation document (light beige #FAF7F0 paper, maroon #7A1C1D banner,
+     sacred verse, phone numbers, table columns, terms, and signature box)
+     with zero dotted placeholders and all entered specifications rendered.
+
+
+4. COMPLETE MODULE BREAKDOWN
+--------------------------------------------------------------------------------
+
+[MODULE 1] AUTHENTICATION & SECURITY
+--------------------------------------------------------------------------------
+- Files:
+  * src/services/AuthService.ts
+  * src/services/SecureStorageService.ts
+  * src/redux/slices/authSlice.ts
+  * src/screens/auth/LoginScreen.tsx
+- Description:
+  Manages user authentication, secure registration, and cryptographic sessions.
+- Key Capabilities:
+  * Master Account: Automatically provisions default master account
+    (Mobile: 8379918585, Password: admin) on first database initialization.
+  * Password Security: Passwords are never stored in plaintext. Each user is
+    assigned a unique 128-bit cryptographic salt and hashed using PBKDF2 with
+    10,000 iterations.
+  * Session Tokens: Generates 256-bit secure session tokens stored in
+    hardware-backed Keychain storage.
+  * Session Expiration: 15-day validity period handled internally.
+  * Clean UI: Technical terms (cryptographic salts, 15-day validity, SQLite)
+    are hidden from the user interface; clean "Business Login" and "Register".
+
+[MODULE 2] BILLING & MULTI-STEP QUOTATION CREATION WIZARD
+--------------------------------------------------------------------------------
+- Files:
+  * src/navigation/BillingStackNavigator.tsx
+  * src/screens/billing/CustomerInformationScreen.tsx
+  * src/screens/billing/BorewellInformationScreen.tsx
+  * src/screens/billing/MaterialDetailsScreen.tsx
+  * src/screens/billing/TotalDeliveryScreen.tsx
+  * src/screens/billing/PaymentInformationScreen.tsx
+  * src/screens/billing/components/BillingStepIndicator.tsx
+  * src/screens/billing/BillingQuotationScreen.tsx (Legacy unified container)
+  * src/redux/slices/billingSlice.ts
+  * src/database/repositories/BillRepository.ts
+  * src/services/CalculationService.ts
+- Description:
+  A structured 5-step wizard designed for quick, error-free on-site data entry.
+  Features a top step indicator component and dedicated screen for each phase.
+- Step-by-Step Flow:
+  1. Step 1: Customer Information (`CustomerInformationScreen`):
+     - Customer Full Name, Mobile Number, Address / Village, Quotation Date.
+     - Auto-generated sequential Quotation Number badge (e.g., MBM-2026-0001).
+  2. Step 2: Borewell Information (`BorewellInformationScreen`):
+     - Borewell Depth (in Feet).
+     - Water Struck Bearing (in Inches).
+     - Bore Size (in Inches).
+  3. Step 3: Material & Pump Details (`MaterialDetailsScreen`):
+     - 9 Structured line item cards with custom specifications:
+       * Row 1: Submersible Pumpset (Make, Size Inch, HP, Stage, Phase)
+       * Row 2: Openwell / Monoblock Pumpset (Make, HP, Phase, Toggle)
+       * Row 3: Submersible Cable (Sq. mm, ISI Mark, Core count)
+       * Row 4: Nylon Wire Rope (Diameter mm)
+       * Row 5: Delivery Pipe (Diameter Inch, Material: G.I. / H.D.P.E. / U.P.V.C.)
+       * Row 6: Control Panel (Starter, Main Switch, Volt Meter, Ammeter, Auto Switch)
+       * Row 7: Fitting Set details
+       * Row 8: Fitting Charges & Transportation details
+       * Row 9: Other Expenses details
+     - Rate, Quantity, and live computed line total for each row.
+  4. Step 4: Total & Delivery (`TotalDeliveryScreen`):
+     - Live Subtotal & Grand Total computation.
+     - Bilingual Amount in Words (Marathi & English) via `CalculationService`.
+     - Editable Delivery Days (default 7 days).
+  5. Step 5: Payment Information (`PaymentInformationScreen`):
+     - Payment Status options: Not Paid (Pending), Paid (Completed), Advance (Partial).
+     - Paid Amount entry with automatic Remaining Amount calculation.
+     - Concurrency & double-tap lock (`useRef` + Redux condition) preventing
+       duplicate quotation creation.
+     - Success alert and direct navigation to Quotation Detail screen.
+
+[MODULE 3] QUOTATION MANAGEMENT & VIEWING
+--------------------------------------------------------------------------------
+- Files:
+  * src/navigation/QuotationStackNavigator.tsx
+  * src/screens/quotation/QuotationListScreen.tsx
+  * src/screens/quotation/QuotationDetailScreen.tsx
+  * src/components/quotation/QuotationDocumentView.tsx
+  * src/redux/slices/quotationSlice.ts
+  * src/database/repositories/QuotationRepository.ts
+- Description:
+  Central hub for browsing, searching, previewing, and converting customer quotations.
+- Key Capabilities:
+  * Searchable Quotation List:
+    - Real-time search by customer name, phone number, or quotation number.
+    - Status filtering (All, Saved, Invoiced, Cancelled).
+    - Summary cards with date, customer name, grand total, and payment status badges.
+  * Quotation Detail & Action Bar:
+    - Authentic document view (`QuotationDocumentView`).
+    - "Convert to Invoice" button: Copies quotation snapshot into the `invoices` table
+      and navigates to invoice adjustment.
+    - "Edit Bill" button: Reloads quotation data into the billing wizard for amendments.
+    - "Print / Share" ready layout.
+    - "Delete Quotation" with confirmation modal.
+    - Live Marathi / English language toggle.
+  * Authentic Printed Document View (`QuotationDocumentView`):
+    - Light beige (#FAF7F0) textured paper background.
+    - Deep maroon (#7A1C1D) header banner with golden border accents.
+    - Enlarged `logoquotation` image with preserved 1.7:1 aspect ratio.
+    - Sacred heading: "|| श्री जोतिर्लिंग प्रसन्न ||"
+    - Shop location & 3 mobile contact numbers.
+    - 5-column table: Serial No, Particulars, Quantity, Rate, Amount.
+    - Payment Information Block: Displays Payment Status, Paid Amount, and Remaining Amount.
+    - Clean text placement with ZERO dotted placeholders.
+    - Authorized signature & stamp box.
+
+[MODULE 4] INVOICE & FINAL ADJUSTMENT SYSTEM
+--------------------------------------------------------------------------------
+- Files:
+  * src/navigation/InvoiceStackNavigator.tsx
+  * src/screens/invoice/InvoiceListScreen.tsx
+  * src/screens/invoice/InvoiceDetailScreen.tsx
+  * src/screens/invoice/FinalInvoiceAdjustmentScreen.tsx
+  * src/redux/slices/invoiceSlice.ts
+  * src/database/repositories/InvoiceRepository.ts
+- Description:
+  Manages finalized tax/cash invoices, post-drilling item adjustments, and payment tracking.
+- Key Capabilities:
+  * Invoice History (`InvoiceListScreen`):
+    - Searchable list by invoice number, customer name, or phone.
+    - Payment status badges (Paid, Advance, Pending).
+  * Final Invoice Adjustment (`FinalInvoiceAdjustmentScreen`):
+    - Allows fine-tuning quantities and rates after on-site work is completed
+      (e.g., actual pipe feet used, additional fittings).
+    - Add or remove extra line items, apply discounts or transport adjustments.
+    - Recalculates Subtotal, Taxes, Grand Total, and updates invoice atomically.
+  * Invoice Detail Viewer (`InvoiceDetailScreen`):
+    - Renders official invoice in the authentic document format.
+    - Payment Status Quick-Updater: Instantly update status between Paid, Advance,
+      and Not Paid with live remaining balance calculation.
+    - Direct access to Final Invoice Adjustment.
+
+[MODULE 5] REVENUE, EXPENSES & DASHBOARD METRICS
+--------------------------------------------------------------------------------
+- Files:
+  * src/screens/home/DashboardScreen.tsx
+  * src/screens/income/IncomeScreen.tsx
+  * src/screens/expense/ExpenseScreen.tsx
+  * src/components/charts/RevenueBarChart.tsx
+  * src/components/charts/IncomeExpenseComparisonChart.tsx
+  * src/redux/slices/dashboardSlice.ts
+  * src/redux/slices/financialSlice.ts
+  * src/database/repositories/FinancialRepository.ts
+- Description:
+  Provides comprehensive business intelligence and financial accounting.
+- Key Capabilities:
+  * Executive Dashboard:
+    - Top App Bar with integrated Marathi / English language selector.
+    - 4 Key Metric Cards: Total Revenue, Income Received, Expense / Outcome, Net Profit.
+    - Dynamic timeline filters: 15 Days, 1 Month, 3 Months, 6 Months.
+    - Interactive SVG Charts: Revenue Bar Chart and Income vs Expense Comparison Chart.
+    - Upcoming Reminders list with quick navigation to Reminders module.
+    - Recent Activity feed and quick-action shortcuts (New Quotation, Log Income, Log Expense).
+  * Income Management (`IncomeScreen`):
+    - Log client payments, drilling advance, motor installations, service fees.
+    - Category tagging and payment modes (Cash, UPI, Cheque, Bank Transfer).
+    - Source client linking and notes.
+  * Expense / Outcome Management (`ExpenseScreen`):
+    - Log pipe purchases, motor procurement, cable reels, transport, fuel, technician wages.
+    - Vendor/person tagging and payment method tracking.
+
+[MODULE 6] REMINDERS & TASK MANAGEMENT
+--------------------------------------------------------------------------------
+- Files:
+  * src/screens/reminders/RemindersScreen.tsx
+  * src/redux/slices/reminderSlice.ts
+  * src/database/repositories/ReminderRepository.ts
+- Description:
+  Manages field tasks, pipe deliveries, site checks, and payment follow-ups.
+- Key Capabilities:
+  * Priority classification: High, Medium, Low with color-coded tags.
+  * Task categories: Client, Field Work, Payment Follow-up, General.
+  * Due date and time tracking with overdue status highlighting.
+  * Filter by All, Pending, and Completed.
+  * One-tap completion toggle.
+
+[MODULE 7] BUSINESS PROFILE & SETTINGS
+--------------------------------------------------------------------------------
+- Files:
+  * src/screens/profile/ProfileScreen.tsx
+  * src/redux/slices/profileSlice.ts
+  * src/database/repositories/ProfileRepository.ts
+  * src/config/appConfig.ts
+- Description:
+  Manages business identity, contact details, GST registration, and app version.
+- Key Capabilities:
+  * Company details: Mahalaxmi Borewell Electricals & Mechanicals.
+  * Registered Address: At Post Hanbarwadi, Taluka Karveer, District Kolhapur.
+  * Contact Person, Phone Numbers (3 mobile numbers), Email, GST Number.
+  * Dynamic Versioning: Exposes `APP_VERSION` (1.0.0) from package.json cleanly.
+
+[MODULE 8] BACKUP & RESTORE
+--------------------------------------------------------------------------------
+- Files:
+  * src/screens/backup/BackupScreen.tsx
+  * src/services/BackupService.ts
+- Description:
+  Facilitates offline disaster recovery and complete data migration.
+- Key Capabilities:
+  * Structured JSON Export: Exports all Bills, Bill Items, Invoices, Invoice Items,
+    Income, Expenses, Reminders, and Profile records.
+  * Validation Engine: Cryptographically checks backup version, required collections,
+    and timestamps before allowing restore.
+  * Atomic Restore: Replaces local database records inside an atomic SQLite transaction
+    and immediately refreshes all Redux state caches.
+  * Account Safety: User login credentials remain preserved during data restore.
+
+[MODULE 9] LOCALIZATION & USER FEEDBACK
+--------------------------------------------------------------------------------
+- Files:
+  * src/redux/slices/languageSlice.ts
+  * src/redux/slices/feedbackSlice.ts
+  * src/components/feedback/AppFeedbackModal.tsx
+  * src/utils/quotationFormatters.ts
+- Description:
+  Provides bilingual support (Marathi & English) and application-wide feedback modals.
+- Key Capabilities:
+  * Marathi / English language toggle: Synchronizes document labels, navigation tabs,
+    dashboard headers, and step titles.
+  * Currency & Number Formatters: Converts numbers to Marathi numerals (०-९) and
+    formats Indian currency amounts in Marathi and English words.
+  * AppFeedbackModal: Unified animated modal for alerts, success confirmations, and
+    error messages mounted at application root.
+
+
+5. DATABASE SCHEMA & TABLE STRUCTURE
+--------------------------------------------------------------------------------
+Database Engine:    @op-engineering/op-sqlite (Fast C++ SQLite)
+Database File:      mahalaxmi_borewell.db
+Schema Version:     1
+
+1. `users`
+   - id (TEXT PRIMARY KEY NOT NULL)
+   - mobileNumber (TEXT UNIQUE NOT NULL)
+   - passwordHash (TEXT NOT NULL)
+   - passwordSalt (TEXT NOT NULL)
+   - name (TEXT NOT NULL)
+   - role (TEXT NOT NULL DEFAULT 'owner')
+   - createdAt (TEXT NOT NULL)
+
+2. `customers`
+   - id (TEXT PRIMARY KEY NOT NULL)
+   - name (TEXT NOT NULL)
+   - mobileNumber (TEXT)
+   - address (TEXT)
+   - createdAt (TEXT NOT NULL)
+
+3. `bills` (Quotations)
+   - id (TEXT PRIMARY KEY NOT NULL)
+   - billNumber (TEXT UNIQUE NOT NULL)
+   - quotationNumber (TEXT)
+   - customerId (TEXT)
+   - customerName (TEXT NOT NULL)
+   - customerPhone (TEXT)
+   - customerAddress (TEXT)
+   - date (TEXT NOT NULL)
+   - borewellDepth (REAL NOT NULL DEFAULT 0)
+   - waterBearing (REAL NOT NULL DEFAULT 0)
+   - boreSize (REAL NOT NULL DEFAULT 0)
+   - totalAmount (REAL NOT NULL DEFAULT 0)
+   - amountInWords (TEXT)
+   - amountInWordsMarathi (TEXT)
+   - amountInWordsEnglish (TEXT)
+   - deliveryDays (INTEGER NOT NULL DEFAULT 7)
+   - status (TEXT NOT NULL DEFAULT 'saved')
+   - paymentStatus (TEXT NOT NULL DEFAULT 'pending')
+   - paidAmount (REAL NOT NULL DEFAULT 0)
+   - remainingAmount (REAL NOT NULL DEFAULT 0)
+   - createdAt (TEXT NOT NULL)
+   - updatedAt (TEXT NOT NULL)
+
+4. `bill_items`
+   - id (TEXT PRIMARY KEY NOT NULL)
+   - billId (TEXT NOT NULL, FOREIGN KEY REFERENCES bills(id) ON DELETE CASCADE)
+   - srNo (INTEGER NOT NULL)
+   - particularsMr (TEXT NOT NULL)
+   - particularsEn (TEXT NOT NULL)
+   - quantity (REAL NOT NULL DEFAULT 0)
+   - rate (REAL NOT NULL DEFAULT 0)
+   - total (REAL NOT NULL DEFAULT 0)
+   - itemSpecs (TEXT) -- JSON encoded specifications object
+   - createdAt (TEXT NOT NULL)
+
+5. `invoices`
+   - id (TEXT PRIMARY KEY NOT NULL)
+   - invoiceNumber (TEXT UNIQUE NOT NULL)
+   - billId (TEXT, FOREIGN KEY REFERENCES bills(id))
+   - sourceQuotationId (TEXT)
+   - sourceQuotationNumber (TEXT)
+   - customerId (TEXT)
+   - customerName (TEXT NOT NULL)
+   - customerPhone (TEXT)
+   - customerAddress (TEXT)
+   - date (TEXT NOT NULL)
+   - borewellDepth (REAL NOT NULL DEFAULT 0)
+   - waterBearing (REAL NOT NULL DEFAULT 0)
+   - boreSize (REAL NOT NULL DEFAULT 0)
+   - deliveryDays (INTEGER NOT NULL DEFAULT 7)
+   - amountInWords (TEXT)
+   - amountInWordsMarathi (TEXT)
+   - amountInWordsEnglish (TEXT)
+   - subtotal (REAL NOT NULL DEFAULT 0)
+   - taxAmount (REAL NOT NULL DEFAULT 0)
+   - grandTotal (REAL NOT NULL DEFAULT 0)
+   - paymentStatus (TEXT NOT NULL DEFAULT 'pending')
+   - paidAmount (REAL NOT NULL DEFAULT 0)
+   - remainingAmount (REAL NOT NULL DEFAULT 0)
+   - notes (TEXT)
+   - createdAt (TEXT NOT NULL)
+   - updatedAt (TEXT NOT NULL)
+
+6. `invoice_items`
+   - id (TEXT PRIMARY KEY NOT NULL)
+   - invoiceId (TEXT NOT NULL, FOREIGN KEY REFERENCES invoices(id) ON DELETE CASCADE)
+   - srNo (INTEGER NOT NULL)
+   - description (TEXT NOT NULL)
+   - quantity (REAL NOT NULL DEFAULT 0)
+   - rate (REAL NOT NULL DEFAULT 0)
+   - total (REAL NOT NULL DEFAULT 0)
+   - itemSpecs (TEXT) -- JSON encoded specifications object
+   - particularsMr (TEXT)
+   - particularsEn (TEXT)
+
+7. `income`
+   - id (TEXT PRIMARY KEY NOT NULL)
+   - amount (REAL NOT NULL)
+   - category (TEXT NOT NULL)
+   - date (TEXT NOT NULL)
+   - description (TEXT)
+   - paymentMethod (TEXT NOT NULL DEFAULT 'cash')
+   - clientSource (TEXT)
+   - createdAt (TEXT NOT NULL)
+   - updatedAt (TEXT NOT NULL)
+
+8. `expenses`
+   - id (TEXT PRIMARY KEY NOT NULL)
+   - amount (REAL NOT NULL)
+   - category (TEXT NOT NULL)
+   - date (TEXT NOT NULL)
+   - description (TEXT)
+   - paymentMethod (TEXT NOT NULL DEFAULT 'cash')
+   - vendorPerson (TEXT)
+   - createdAt (TEXT NOT NULL)
+   - updatedAt (TEXT NOT NULL)
+
+9. `reminders`
+   - id (TEXT PRIMARY KEY NOT NULL)
+   - title (TEXT NOT NULL)
+   - description (TEXT)
+   - date (TEXT NOT NULL)
+   - time (TEXT)
+   - type (TEXT NOT NULL DEFAULT 'client')
+   - priority (TEXT NOT NULL DEFAULT 'medium')
+   - status (TEXT NOT NULL DEFAULT 'pending')
+   - createdAt (TEXT NOT NULL)
+   - updatedAt (TEXT NOT NULL)
+
+10. `profile`
+    - id (TEXT PRIMARY KEY NOT NULL)
+    - name (TEXT NOT NULL)
+    - mobileNumber (TEXT NOT NULL)
+    - email (TEXT)
+    - businessName (TEXT NOT NULL)
+    - businessAddress (TEXT NOT NULL)
+    - gstNumber (TEXT)
+    - updatedAt (TEXT NOT NULL)
+
+11. `settings`
+    - key (TEXT PRIMARY KEY NOT NULL)
+    - value (TEXT NOT NULL)
+    - updatedAt (TEXT NOT NULL)
+
+Performance Indexes:
+- `idx_invoices_date` ON `invoices(date)`
+- `idx_income_date` ON `income(date)`
+- `idx_expenses_date` ON `expenses(date)`
+- `idx_reminders_status_date` ON `reminders(status, date)`
+- `idx_bills_date` ON `bills(date)`
+
+
+6. NAVIGATION ARCHITECTURE
+--------------------------------------------------------------------------------
+1. RootNavigator:
+   - Conditional rendering based on authentication state:
+     * Unauthenticated: `LoginScreen`
+     * Authenticated: `MainTabNavigator`
+
+2. MainTabNavigator (5 Bottom Tabs):
+   - Tab 1: HomeTab -> `DashboardScreen` (होम / Home)
+   - Tab 2: BillingTab -> `BillingStackNavigator` (बिलिंग / Billing)
+   - Tab 3: QuotationTab -> `QuotationStackNavigator` (कोटेशन / Quotation)
+   - Tab 4: InvoiceTab -> `InvoiceStackNavigator` (इनव्हॉइस / Invoice)
+   - Tab 5: MoreTab -> `MoreStackNavigator` (अधिक / More)
+
+3. Sub-Navigators:
+   - `BillingStackNavigator`:
+     * `CustomerInformation` (Step 1)
+     * `BorewellInformation` (Step 2)
+     * `MaterialDetails` (Step 3)
+     * `TotalDelivery` (Step 4)
+     * `PaymentInformation` (Step 5)
+   - `QuotationStackNavigator`:
+     * `QuotationList`
+     * `QuotationDetail`
+   - `InvoiceStackNavigator`:
+     * `InvoiceList`
+     * `InvoiceDetail`
+     * `FinalInvoiceAdjustment`
+   - `MoreStackNavigator`:
+     * `MoreMenu`
+     * `Income`
+     * `Expense`
+     * `Reminders`
+     * `Profile`
+     * `Backup`
+
+
+7. BRANDING & ASSET ARCHITECTURE
+--------------------------------------------------------------------------------
+1. `logombm` (Goddess Mahalaxmi Gold Emblem):
+   - Purpose: Exclusively used as the native Android application launcher icon.
+   - Files:
+     * android/app/src/main/res/mipmap-mdpi/ic_launcher.png (48x48)
+     * android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png (48x48)
+     * android/app/src/main/res/mipmap-hdpi/ic_launcher.png (72x72)
+     * android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png (72x72)
+     * android/app/src/main/res/mipmap-xhdpi/ic_launcher.png (96x96)
+     * android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png (96x96)
+     * android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png (144x144)
+     * android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png (144x144)
+     * android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png (192x192)
+     * android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png (192x192)
+   - Constraint: NEVER displayed inside the in-app React Native UI.
+
+2. `logoquotation` (Borewell Truck & Rig Banner):
+   - Purpose: In-app quotation header and company branding.
+   - File:
+     * src/assets/images/logoquotation.png (1024x597)
+   - Usage:
+     * QuotationDocumentView header
+     * Billing navigation and headers
+     * RigLogo shared component for in-app headers
+   - Constraint: NEVER configured as native Android launcher icon.
+
+
+8. PROJECT DIRECTORY STRUCTURE
+--------------------------------------------------------------------------------
+d:\Work\Mahalaxmi_Borewell
+├── __tests__/                          # Automated unit test suites (29 tests)
+│   ├── App.test.tsx                    # App root rendering tests
+│   ├── DatabaseAndStartupAudit.test.ts # SQLite init & billing save flow tests
+│   └── FinancialAndOffline.test.ts     # Math & Marathi currency converter tests
+├── android/                            # Android native project files
+│   ├── app/
+│   │   ├── build.gradle                # Android app build configuration
+│   │   └── src/main/res/               # Mipmap launcher icons & drawables
+│   └── gradlew.bat                     # Gradle build utility
+├── src/
+│   ├── assets/
+│   │   └── images/
+│   │       └── logoquotation.png       # In-app company logo
+│   ├── components/
+│   │   ├── charts/                     # Analytics charts
+│   │   │   ├── IncomeExpenseComparisonChart.tsx
+│   │   │   └── RevenueBarChart.tsx
+│   │   ├── common/                     # Reusable UI controls
+│   │   │   ├── Badge.tsx
+│   │   │   ├── Button.tsx
+│   │   │   ├── Card.tsx
+│   │   │   ├── Header.tsx
+│   │   │   ├── Icon.tsx
+│   │   │   ├── Input.tsx
+│   │   │   └── RigLogo.tsx
+│   │   ├── feedback/
+│   │   │   └── AppFeedbackModal.tsx    # Unified animated feedback modal
+│   │   └── quotation/
+│   │       └── QuotationDocumentView.tsx # Authentic printed quotation viewer
+│   ├── config/
+│   │   └── appConfig.ts                # Central dynamic version configuration
+│   ├── database/
+│   │   ├── DatabaseService.ts          # Core SQLite service & migrations
+│   │   ├── schema.ts                   # SQL DDL table creation statements & indexes
+│   │   └── repositories/               # Domain data repositories
+│   │       ├── AuthRepository.ts
+│   │       ├── BillRepository.ts
+│   │       ├── FinancialRepository.ts
+│   │       ├── InvoiceRepository.ts
+│   │       ├── ProfileRepository.ts
+│   │       ├── QuotationRepository.ts
+│   │       └── ReminderRepository.ts
+│   ├── navigation/
+│   │   ├── RootNavigator.tsx           # Root auth/app switcher
+│   │   ├── MainTabNavigator.tsx        # 5 Bottom tabs (Home, Billing, Quotation, Invoice, More)
+│   │   ├── BillingStackNavigator.tsx   # 5-step billing wizard stack
+│   │   ├── QuotationStackNavigator.tsx # Quotation list & detail stack
+│   │   ├── InvoiceStackNavigator.tsx   # Invoice list, detail & adjustment stack
+│   │   └── MoreStackNavigator.tsx      # More options stack
+│   ├── redux/
+│   │   ├── store.ts                    # Centralized Redux store configuration
+│   │   ├── hooks.ts                    # Typed Redux useDispatch & useSelector hooks
+│   │   └── slices/                     # Domain state slices
+│   │       ├── authSlice.ts
+│   │       ├── billingSlice.ts
+│   │       ├── dashboardSlice.ts
+│   │       ├── feedbackSlice.ts
+│   │       ├── financialSlice.ts
+│   │       ├── invoiceSlice.ts
+│   │       ├── languageSlice.ts
+│   │       ├── profileSlice.ts
+│   │       ├── quotationSlice.ts
+│   │       └── reminderSlice.ts
+│   ├── screens/
+│   │   ├── auth/
+│   │   │   └── LoginScreen.tsx         # Clean business login & register
+│   │   ├── backup/
+│   │   │   └── BackupScreen.tsx        # Local JSON backup & restore
+│   │   ├── billing/
+│   │   │   ├── BillingQuotationScreen.tsx # Unified form container
+│   │   │   ├── BorewellInformationScreen.tsx # Step 2: Depth & bore specifications
+│   │   │   ├── CustomerInformationScreen.tsx # Step 1: Customer details & date
+│   │   │   ├── MaterialDetailsScreen.tsx     # Step 3: 9 Material line item cards
+│   │   │   ├── PaymentInformationScreen.tsx  # Step 5: Payment status & amount
+│   │   │   ├── TotalDeliveryScreen.tsx       # Step 4: Totals & delivery days
+│   │   │   └── components/
+│   │   │       └── BillingStepIndicator.tsx  # Progress stepper indicator
+│   │   ├── expense/
+│   │   │   └── ExpenseScreen.tsx       # Expense logging & categorization
+│   │   ├── home/
+│   │   │   └── DashboardScreen.tsx     # Business KPIs & analytics
+│   │   ├── income/
+│   │   │   └── IncomeScreen.tsx        # Income logging & client tracking
+│   │   ├── invoice/
+│   │   │   ├── FinalInvoiceAdjustmentScreen.tsx # Post-drilling invoice fine-tuning
+│   │   │   ├── InvoiceDetailScreen.tsx # Invoice viewer & payment status updater
+│   │   │   └── InvoiceListScreen.tsx   # Searchable invoice history
+│   │   ├── more/
+│   │   │   └── MoreMenuScreen.tsx      # Navigation menu & version footer
+│   │   ├── profile/
+│   │   │   └── ProfileScreen.tsx       # Business profile & GST editor
+│   │   ├── quotation/
+│   │   │   ├── QuotationDetailScreen.tsx # Quotation viewer & invoice conversion
+│   │   │   └── QuotationListScreen.tsx   # Searchable quotation history
+│   │   └── reminders/
+│   │       └── RemindersScreen.tsx     # Task & reminder management
+│   ├── services/
+│   │   ├── AuthService.ts              # PBKDF2 hashing, salts, tokens, session expiry
+│   │   ├── BackupService.ts            # Export/import validation & JSON serialization
+│   │   ├── CalculationService.ts       # Precise financial math & Indian words
+│   │   └── SecureStorageService.ts     # Keychain session storage
+│   ├── theme/                          # Design system tokens
+│   │   ├── colors.ts                   # Brand, semantic, and neutral color tokens
+│   │   ├── index.ts                    # Unified theme export
+│   │   ├── spacing.ts                  # Layout spacing & border radii
+│   │   └── typography.ts               # Font scales & text styling
+│   ├── types/                          # TypeScript definitions
+│   │   ├── database.ts                 # Database entities, rows, and payloads
+│   │   └── navigation.ts               # Screen parameters & stack navigation types
+│   └── utils/
+│       └── quotationFormatters.ts      # Marathi numerals conversion & currency formatting
+├── App.tsx                             # Application root with Redux & Modal providers
+├── index.js                            # React Native app entry point
+├── package.json                        # Dependencies and version (1.0.0)
+├── tsconfig.json                       # TypeScript compiler configuration
+└── read.txt                            # Complete technical manual (this file)
+
+
+9. OPERATIONAL & BUILD INSTRUCTIONS
+--------------------------------------------------------------------------------
+1. Prerequisites:
+   - Node.js 18+
+   - Java Development Kit (JDK 17)
+   - Android SDK (Platform 34 / 35, Build Tools 35.0.0)
+   - PowerShell / Windows Terminal
+
+2. Development Server:
+   From project root:
+   npx react-native start --reset-cache
+
+3. Run On Connected Android Device / Emulator:
+   npx react-native run-android
+
+4. Clean Gradle Build:
+   cd android
+   .\gradlew clean
+   cd ..
+
+5. Production Release APK Compilation:
+   cd android
+   .\gradlew assembleRelease
+   The output APK will be generated at:
+   android/app/build/outputs/apk/release/app-release.apk
+
+6. Run Automated Test Suites:
+   npm test
+   Executes 29 comprehensive unit tests across 3 suites covering financial
+   calculations, currency translation, database startup, and billing concurrency.
+
+7. Run TypeScript Compilation Audit:
+   npx tsc --noEmit
+   Verifies 100% strict type conformance across all TS/TSX source files.
+
+================================================================================
+                         END OF SYSTEM DOCUMENTATION
+================================================================================
