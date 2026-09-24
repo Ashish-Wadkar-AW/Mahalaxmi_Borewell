@@ -10,6 +10,7 @@ import {
 import { colors, spacing, borderRadius, shadows } from '../../theme';
 import { Icon, IconName } from '../common/Icon';
 import { Button } from '../common/Button';
+import { useAppSelector } from '../../redux/hooks';
 
 export type FeedbackType = 'success' | 'error' | 'warning' | 'confirmation' | 'info';
 
@@ -34,6 +35,9 @@ export const AppFeedbackModal: React.FC<AppFeedbackModalProps> = ({
   config,
   onClose,
 }) => {
+  const currentLanguage = useAppSelector(state => state.language?.currentLanguage);
+  const isMarathi = currentLanguage === 'mr';
+
   if (!config.visible) return null;
 
   const getIconDetails = (): { name: IconName; color: string; bg: string } => {
@@ -89,7 +93,7 @@ export const AppFeedbackModal: React.FC<AppFeedbackModalProps> = ({
                 {hasCancel && (
                   <View style={styles.buttonHalf}>
                     <Button
-                      title={config.cancelText || 'Cancel'}
+                      title={config.cancelText || (isMarathi ? 'रद्द करा' : 'Cancel')}
                       variant="secondary"
                       onPress={handleDismiss}
                     />
@@ -100,7 +104,9 @@ export const AppFeedbackModal: React.FC<AppFeedbackModalProps> = ({
                   <Button
                     title={
                       config.confirmText ||
-                      (config.type === 'confirmation' ? 'Confirm' : 'OK')
+                      (config.type === 'confirmation'
+                        ? (isMarathi ? 'खात्री करा' : 'Confirm')
+                        : (isMarathi ? 'ठीक आहे' : 'OK'))
                     }
                     variant={
                       config.type === 'error' ||

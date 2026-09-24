@@ -140,8 +140,8 @@ export const QuotationListScreen: React.FC = () => {
                 isPaid
                   ? isMarathi ? 'पूर्ण जमा' : 'Paid'
                   : isPartial
-                  ? isMarathi ? 'अॅडव्हान्स' : 'Advance'
-                  : isMarathi ? 'देणे बाकी' : 'Not Paid'
+                    ? isMarathi ? 'अ‍ॅडव्हान्स' : 'Advance'
+                    : isMarathi ? 'देणे बाकी' : 'Not Paid'
               }
               variant={isPaid ? 'success' : isPartial ? 'warning' : 'danger'}
               size="sm"

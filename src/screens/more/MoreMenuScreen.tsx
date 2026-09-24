@@ -12,6 +12,7 @@ import { Header } from '../../components/common/Header';
 import { Icon, IconName } from '../../components/common/Icon';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { logoutThunk } from '../../redux/slices/authSlice';
+import { setLanguage } from '../../redux/slices/languageSlice';
 import { showFeedback } from '../../redux/slices/feedbackSlice';
 import { useNavigation } from '@react-navigation/native';
 import { APP_VERSION } from '../../config/appConfig';
@@ -121,6 +122,26 @@ export const MoreMenuScreen: React.FC = () => {
             ? 'व्यवसाय व्यवस्थापन'
             : 'Business Management'
         }
+        rightElement={
+          <View style={styles.langToggle}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => dispatch(setLanguage('mr'))}
+              style={[styles.langBtn, isMarathi && styles.langBtnActive]}>
+              <Text style={[styles.langText, isMarathi && styles.langTextActive]}>
+                मराठी
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => dispatch(setLanguage('en'))}
+              style={[styles.langBtn, !isMarathi && styles.langBtnActive]}>
+              <Text style={[styles.langText, !isMarathi && styles.langTextActive]}>
+                EN
+              </Text>
+            </TouchableOpacity>
+          </View>
+        }
       />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -142,6 +163,46 @@ export const MoreMenuScreen: React.FC = () => {
               <Icon name="chevronRight" size={18} color={colors.gray400} />
             </TouchableOpacity>
           ))}
+        </View>
+
+        {/* Language Selection Card */}
+        <View style={styles.securitySection}>
+          <Text style={styles.sectionHeader}>
+            {isMarathi ? 'अ‍ॅप भाषा (Language)' : 'App Language'}
+          </Text>
+          <View style={styles.langCard}>
+            <View style={[styles.iconCircle, { backgroundColor: colors.primaryMuted }]}>
+              <Icon name="language" size={20} color={colors.primary} />
+            </View>
+            <View style={styles.menuTextContainer}>
+              <Text style={styles.menuTitle}>
+                {isMarathi ? 'मराठी / English' : 'Language Selection'}
+              </Text>
+              <Text style={styles.menuSubtitle}>
+                {isMarathi
+                  ? 'सध्याची सक्रिय भाषा: मराठी'
+                  : 'Current active language: English'}
+              </Text>
+            </View>
+            <View style={styles.langToggle}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => dispatch(setLanguage('mr'))}
+                style={[styles.langBtn, isMarathi && styles.langBtnActive]}>
+                <Text style={[styles.langText, isMarathi && styles.langTextActive]}>
+                  मराठी
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => dispatch(setLanguage('en'))}
+                style={[styles.langBtn, !isMarathi && styles.langBtnActive]}>
+                <Text style={[styles.langText, !isMarathi && styles.langTextActive]}>
+                  EN
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
 
         {/* Separated Destructive Action: Logout */}
@@ -263,5 +324,38 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.gray400,
     marginTop: 2,
+  },
+  langCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    ...shadows.sm,
+  },
+  langToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#FAF7F0',
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#D4C6AB',
+    overflow: 'hidden',
+  },
+  langBtn: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  langBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  langText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#554B42',
+  },
+  langTextActive: {
+    color: '#FFFFFF',
   },
 });

@@ -3,6 +3,11 @@ import { View, Text, StyleSheet, Image } from 'react-native';
 import { colors, spacing, borderRadius, shadows } from '../../theme';
 import { CalculationService } from '../../services/CalculationService';
 import { formatParticularsText, numberToWordsMarathi } from '../../utils/quotationFormatters';
+import officialStamp from '../../assets/official_stamp.png';
+import authorizedSignature from '../../assets/authorized_signature.png';
+
+export const QUOTATION_STAMP = officialStamp;
+export const QUOTATION_SIGNATURE = authorizedSignature;
 
 export interface QuotationViewItem {
   srNo: number;
@@ -72,8 +77,8 @@ export const QuotationDocumentView: React.FC<QuotationDocumentViewProps> = ({
     amountInWords && amountInWords.trim().length > 0
       ? amountInWords
       : isMarathi
-      ? numberToWordsMarathi(grandTotal)
-      : CalculationService.numberToWordsIndian(grandTotal);
+        ? numberToWordsMarathi(grandTotal)
+        : CalculationService.numberToWordsIndian(grandTotal);
 
   return (
     <View style={styles.paperSheet}>
@@ -220,8 +225,8 @@ export const QuotationDocumentView: React.FC<QuotationDocumentViewProps> = ({
       <View style={styles.quotationTitleContainer}>
         <Text style={styles.quotationTitle}>
           {isQuotation
-            ? isMarathi ? 'कोटेशन (QUOTATION)' : 'QUOTATION'
-            : isMarathi ? 'कर बीजक (TAX INVOICE)' : 'TAX INVOICE'}
+            ? isMarathi ? 'कोटेशन' : 'QUOTATION'
+            : isMarathi ? 'कोटेशन' : 'TAX INVOICE'}
         </Text>
       </View>
 
@@ -291,7 +296,7 @@ export const QuotationDocumentView: React.FC<QuotationDocumentViewProps> = ({
         {/* Grand Total Row */}
         <View style={styles.tableTotalRow}>
           <Text style={[styles.grandTotalLabel, styles.colSrToRate]}>
-            {isMarathi ? 'एकूण (TOTAL) :' : 'GRAND TOTAL :'}
+            {isMarathi ? 'एकूण  :' : 'GRAND TOTAL :'}
           </Text>
           <View style={[styles.colTotal, styles.textRightView]}>
             <Text style={styles.grandTotalValue}>
@@ -304,7 +309,7 @@ export const QuotationDocumentView: React.FC<QuotationDocumentViewProps> = ({
       {/* Amount in Words */}
       <View style={styles.wordsSection}>
         <Text style={styles.wordsLabel}>
-          {isMarathi ? 'अक्षरी रुपये (Amount in Words) :' : 'Amount in Words (Rupees) :'}
+          {isMarathi ? 'अक्षरी रुपये  :' : 'Amount in Words (Rupees) :'}
         </Text>
         <View style={styles.wordsValueBox}>
           <Text style={styles.wordsValueText}>{displayWords}</Text>
@@ -333,14 +338,14 @@ export const QuotationDocumentView: React.FC<QuotationDocumentViewProps> = ({
               paymentStatus === 'paid'
                 ? styles.docStatusPaid
                 : paymentStatus === 'partial'
-                ? styles.docStatusAdvance
-                : styles.docStatusPending,
+                  ? styles.docStatusAdvance
+                  : styles.docStatusPending,
             ]}>
             {paymentStatus === 'paid'
-              ? isMarathi ? 'पूर्ण जमा (Paid)' : 'Paid'
+              ? isMarathi ? 'पूर्ण जमा' : 'Paid'
               : paymentStatus === 'partial'
-              ? isMarathi ? 'अॅडव्हान्स (Advance)' : 'Advance'
-              : isMarathi ? 'देणे बाकी (Not Paid)' : 'Not Paid'}
+                ? isMarathi ? 'अ‍ॅडव्हान्स' : 'Advance'
+                : isMarathi ? 'देणे बाकी' : 'Not Paid'}
           </Text>
         </View>
 
@@ -414,19 +419,29 @@ export const QuotationDocumentView: React.FC<QuotationDocumentViewProps> = ({
 
       {/* Signature & Stamp Section */}
       <View style={styles.signatureSection}>
+        {/* Official Stamp */}
         <View style={styles.signatureStampBox}>
-          <Text style={styles.stampText}>
-            {isMarathi ? '[ अधिकृत शिक्का ]' : '[ Official Stamp ]'}
-          </Text>
+          <Image
+            source={officialStamp}
+            style={styles.stampImage}
+            resizeMode="contain"
+          />
         </View>
 
+        {/* Authorized Signature */}
         <View style={styles.signatureCol}>
           <Text style={styles.signatoryCompany}>
             {isMarathi
-              ? 'महालक्ष्मी बोरवेल्स् अॅन्ड पंप्स् करिता'
+              ? 'महालक्ष्मी बोरवेल्स् आणि पंप्स् करिता'
               : 'For Mahalaxmi Borewells & Pumps'}
           </Text>
-          <View style={styles.signatureLine} />
+
+          <Image
+            source={authorizedSignature}
+            style={styles.signatureImage}
+            resizeMode="contain"
+          />
+
           <Text style={styles.signatoryTitle}>
             {isMarathi ? 'स्वाक्षरी / Signature' : 'Authorized Signature'}
           </Text>
@@ -848,33 +863,34 @@ const styles = StyleSheet.create({
   },
   signatureStampBox: {
     width: 90,
-    height: 48,
+    height: 75,
     borderWidth: 1,
     borderStyle: 'dashed',
     borderColor: '#9E8F7A',
     borderRadius: borderRadius.xs,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 2,
+    backgroundColor: 'transparent',
   },
-  stampText: {
-    fontSize: 8.5,
-    color: '#8A7B68',
-    fontWeight: '600',
+  stampImage: {
+    width: 80,
+    height: 68,
   },
   signatureCol: {
     alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   signatoryCompany: {
     fontSize: 9.5,
     fontWeight: '800',
     color: '#7A1C1C',
-    marginBottom: 18,
-  },
-  signatureLine: {
-    width: 140,
-    height: 1,
-    backgroundColor: '#7A1C1C',
     marginBottom: 2,
+  },
+  signatureImage: {
+    width: 130,
+    height: 48,
+    marginVertical: 1,
   },
   signatoryTitle: {
     fontSize: 8.5,

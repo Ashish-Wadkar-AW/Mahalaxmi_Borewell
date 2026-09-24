@@ -1065,7 +1065,7 @@ export const BillingQuotationScreen: React.FC = () => {
                     styles.paymentBtnText,
                     billing.paymentStatus === 'partial' && styles.paymentBtnTextActive,
                   ]}>
-                  {isMarathi ? 'अॅडव्हान्स' : 'Advance'}
+                  {isMarathi ? 'अ‍ॅडव्हान्स' : 'Advance'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1074,7 +1074,7 @@ export const BillingQuotationScreen: React.FC = () => {
             {billing.paymentStatus === 'partial' ? (
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>
-                  {isMarathi ? 'अॅडव्हान्स / जमा रक्कम (₹) *' : 'Advance / Paid Amount (₹) *'}
+                  {isMarathi ? 'अ‍ॅडव्हान्स / जमा रक्कम (₹) *' : 'Advance / Paid Amount (₹) *'}
                 </Text>
                 <TextInput
                   value={billing.paidAmount}
@@ -1099,14 +1099,14 @@ export const BillingQuotationScreen: React.FC = () => {
                     billing.paymentStatus === 'paid'
                       ? styles.statusColorPaid
                       : billing.paymentStatus === 'partial'
-                      ? styles.statusColorAdvance
-                      : styles.statusColorPending,
+                        ? styles.statusColorAdvance
+                        : styles.statusColorPending,
                   ]}>
                   {billing.paymentStatus === 'paid'
-                    ? isMarathi ? 'पूर्ण जमा (Paid)' : 'Paid'
+                    ? isMarathi ? 'पूर्ण जमा' : 'Paid'
                     : billing.paymentStatus === 'partial'
-                    ? isMarathi ? 'अॅडव्हान्स (Advance)' : 'Advance'
-                    : isMarathi ? 'देणे बाकी (Not Paid)' : 'Not Paid'}
+                      ? isMarathi ? 'अ‍ॅडव्हान्स' : 'Advance'
+                      : isMarathi ? 'देणे बाकी' : 'Not Paid'}
                 </Text>
               </View>
 

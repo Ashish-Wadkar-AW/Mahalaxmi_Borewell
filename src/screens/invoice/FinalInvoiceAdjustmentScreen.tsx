@@ -69,7 +69,7 @@ export const FinalInvoiceAdjustmentScreen: React.FC = () => {
         if (it.itemSpecs) {
           try {
             parsedSpecs = JSON.parse(it.itemSpecs);
-          } catch {}
+          } catch { }
         }
         return {
           srNo: it.srNo,
@@ -218,8 +218,8 @@ export const FinalInvoiceAdjustmentScreen: React.FC = () => {
         paymentStatus === 'paid'
           ? grandTotal
           : paymentStatus === 'pending'
-          ? 0
-          : Math.min(parseFloat(paidAmount) || 0, grandTotal);
+            ? 0
+            : Math.min(parseFloat(paidAmount) || 0, grandTotal);
       const remNum = Math.max(0, Math.round((grandTotal - pNum + Number.EPSILON) * 100) / 100);
 
       const mrWords = numberToWordsMarathi(grandTotal);
@@ -414,7 +414,7 @@ export const FinalInvoiceAdjustmentScreen: React.FC = () => {
                   </View>
 
                   <View style={styles.inputColTotal}>
-                    <Text style={styles.colLabel}>{isMarathi ? 'एकूण (Total ₹)' : 'Total (₹)'}</Text>
+                    <Text style={styles.colLabel}>{isMarathi ? 'एकूण ₹' : 'Total (₹)'}</Text>
                     <Text style={styles.lineTotalText}>
                       ₹ {item.total ? item.total.toLocaleString('en-IN') : '0.00'}
                     </Text>
@@ -469,10 +469,10 @@ export const FinalInvoiceAdjustmentScreen: React.FC = () => {
                         paymentStatus === st && styles.paymentChipTextActive,
                       ]}>
                       {st === 'pending'
-                        ? isMarathi ? 'देणे बाकी (Not Paid)' : 'Not Paid'
+                        ? isMarathi ? 'देणे बाकी' : 'Not Paid'
                         : st === 'partial'
-                        ? isMarathi ? 'अॅडव्हान्स (Advance)' : 'Advance'
-                        : isMarathi ? 'पूर्ण जमा (Paid)' : 'Paid'}
+                          ? isMarathi ? 'अ‍ॅडव्हान्स' : 'Advance'
+                          : isMarathi ? 'पूर्ण जमा' : 'Paid'}
                     </Text>
                   </TouchableOpacity>
                 ))}

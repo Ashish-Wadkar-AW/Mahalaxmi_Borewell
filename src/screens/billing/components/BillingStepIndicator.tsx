@@ -7,6 +7,7 @@ import {
   resetBillingForm,
   fetchNextBillNumberThunk,
 } from '../../../redux/slices/billingSlice';
+import { setLanguage } from '../../../redux/slices/languageSlice';
 import { showFeedback } from '../../../redux/slices/feedbackSlice';
 
 export interface BillingStepIndicatorProps {
@@ -52,7 +53,7 @@ export const BillingStepIndicator: React.FC<BillingStepIndicatorProps> = ({ curr
 
   return (
     <View style={styles.container}>
-      {/* Top Control Bar: Bill number badge, Reset button */}
+      {/* Top Control Bar: Bill number badge, Language toggle, Reset button */}
       <View style={styles.controlBar}>
         <View style={styles.billBadge}>
           <Text style={styles.billBadgeText}>
@@ -61,13 +62,34 @@ export const BillingStepIndicator: React.FC<BillingStepIndicatorProps> = ({ curr
           </Text>
         </View>
 
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={handleReset}
-          style={styles.resetBtn}>
-          <Icon name="refresh" size={14} color={colors.primary} />
-          <Text style={styles.resetBtnText}>{isMarathi ? 'नवीन' : 'Reset'}</Text>
-        </TouchableOpacity>
+        <View style={styles.controlRightRow}>
+          <View style={styles.langToggle}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => dispatch(setLanguage('mr'))}
+              style={[styles.langBtn, isMarathi && styles.langBtnActive]}>
+              <Text style={[styles.langText, isMarathi && styles.langTextActive]}>
+                मराठी
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => dispatch(setLanguage('en'))}
+              style={[styles.langBtn, !isMarathi && styles.langBtnActive]}>
+              <Text style={[styles.langText, !isMarathi && styles.langTextActive]}>
+                EN
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={handleReset}
+            style={styles.resetBtn}>
+            <Icon name="refresh" size={14} color={colors.primary} />
+            <Text style={styles.resetBtnText}>{isMarathi ? 'नवीन' : 'Reset'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Visual Step Indicator Progress Bar */}
@@ -153,6 +175,34 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: colors.primary,
+  },
+  controlRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+  },
+  langToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#FAF7F0',
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#D4C6AB',
+    overflow: 'hidden',
+  },
+  langBtn: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  langBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  langText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#554B42',
+  },
+  langTextActive: {
+    color: '#FFFFFF',
   },
   resetBtn: {
     flexDirection: 'row',

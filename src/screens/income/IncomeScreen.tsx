@@ -160,7 +160,8 @@ export const IncomeScreen: React.FC = () => {
             <View style={styles.recordBody}>
               {item.clientSource ? (
                 <Text style={styles.clientSource}>
-                  From: <Text style={styles.boldText}>{item.clientSource}</Text>
+                  {isMarathi ? 'स्रोत / ग्राहक: ' : 'From: '}
+                  <Text style={styles.boldText}>{item.clientSource}</Text>
                 </Text>
               ) : null}
               {item.description ? (
@@ -170,7 +171,15 @@ export const IncomeScreen: React.FC = () => {
 
             <View style={styles.recordFooter}>
               <Badge
-                label={item.paymentMethod.replace('_', ' ')}
+                label={
+                  item.paymentMethod === 'cash'
+                    ? isMarathi ? 'रोख' : 'Cash'
+                    : item.paymentMethod === 'upi'
+                    ? 'UPI'
+                    : item.paymentMethod === 'bank_transfer'
+                    ? isMarathi ? 'बँक' : 'Bank Transfer'
+                    : isMarathi ? 'चेक' : 'Cheque'
+                }
                 variant="info"
                 size="sm"
               />
@@ -185,9 +194,13 @@ export const IncomeScreen: React.FC = () => {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Icon name="rupee" size={48} color={colors.gray400} />
-            <Text style={styles.emptyTitle}>No Income Recorded</Text>
+            <Text style={styles.emptyTitle}>
+              {isMarathi ? 'कोणतीही जमा रक्कम नोंदवलेली नाही' : 'No Income Recorded'}
+            </Text>
             <Text style={styles.emptySubtitle}>
-              Tap the "+ Add Income" button above to log received client payments and borewell revenues.
+              {isMarathi
+                ? 'ग्राहकांकडून मिळालेली देयके व बोअरवेल महसूल नोंदवण्यासाठी वरील "+ जमा नोंदवा" बटणावर टॅप करा.'
+                : 'Tap the "+ Add Income" button above to log received client payments and borewell revenues.'}
             </Text>
           </View>
         }
@@ -198,7 +211,9 @@ export const IncomeScreen: React.FC = () => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Record New Income</Text>
+              <Text style={styles.modalTitle}>
+                {isMarathi ? 'नवीन जमा नोंदवा' : 'Record New Income'}
+              </Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
                 <Icon name="close" size={22} color={colors.textPrimary} />
               </TouchableOpacity>
@@ -206,38 +221,48 @@ export const IncomeScreen: React.FC = () => {
 
             <ScrollView style={styles.modalBody}>
               <Input
-                label="Amount"
+                label={isMarathi ? 'रक्कम' : 'Amount'}
                 value={amount}
                 onChangeText={setAmount}
-                placeholder="e.g. 25000"
+                placeholder={isMarathi ? 'उदा. २५०००' : 'e.g. 25000'}
                 keyboardType="numeric"
                 prefix="₹"
                 required
               />
 
               <Input
-                label="Category"
+                label={isMarathi ? 'प्रवर्ग (Category)' : 'Category'}
                 value={category}
                 onChangeText={setCategory}
-                placeholder="Borewell Service, Maintenance, Fitting"
+                placeholder={
+                  isMarathi
+                    ? 'बोअरवेल सेवा, देखभाल, फिटिंग'
+                    : 'Borewell Service, Maintenance, Fitting'
+                }
               />
 
               <Input
-                label="Client / Source"
+                label={isMarathi ? 'ग्राहक / स्रोत' : 'Client / Source'}
                 value={clientSource}
                 onChangeText={setClientSource}
-                placeholder="Client Name or Firm"
+                placeholder={
+                  isMarathi
+                    ? 'ग्राहकाचे नांव किंवा संस्था'
+                    : 'Client Name or Firm'
+                }
               />
 
               <Input
-                label="Date"
+                label={isMarathi ? 'तारीख' : 'Date'}
                 value={date}
                 onChangeText={setDate}
                 placeholder="YYYY-MM-DD"
               />
 
               {/* Payment Method Selector */}
-              <Text style={styles.methodLabel}>Payment Method</Text>
+              <Text style={styles.methodLabel}>
+                {isMarathi ? 'पेमेंट पद्धत' : 'Payment Method'}
+              </Text>
               <View style={styles.methodRow}>
                 {(['cash', 'upi', 'bank_transfer', 'cheque'] as const).map(m => (
                   <TouchableOpacity
@@ -252,23 +277,33 @@ export const IncomeScreen: React.FC = () => {
                         styles.methodBtnText,
                         paymentMethod === m && styles.methodBtnTextActive,
                       ]}>
-                      {m === 'bank_transfer' ? 'Bank' : m.toUpperCase()}
+                      {m === 'cash'
+                        ? isMarathi ? 'रोख' : 'CASH'
+                        : m === 'upi'
+                        ? 'UPI'
+                        : m === 'bank_transfer'
+                        ? isMarathi ? 'बँक' : 'BANK'
+                        : isMarathi ? 'चेक' : 'CHEQUE'}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
               <Input
-                label="Description / Notes"
+                label={isMarathi ? 'तपशील / टीप' : 'Description / Notes'}
                 value={description}
                 onChangeText={setDescription}
-                placeholder="Optional notes or details"
+                placeholder={
+                  isMarathi
+                    ? 'ऐच्छिक तपशील किंवा नोंदी'
+                    : 'Optional notes or details'
+                }
                 multiline
                 numberOfLines={2}
               />
 
               <Button
-                title="Save Income Record"
+                title={isMarathi ? 'जमा नोंद जतन करा' : 'Save Income Record'}
                 onPress={handleSaveIncome}
                 icon="save"
                 style={styles.saveIncomeBtn}

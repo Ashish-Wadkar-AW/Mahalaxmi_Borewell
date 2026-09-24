@@ -89,7 +89,8 @@ describe('QuotationPdfService', () => {
     expect(html).toContain('अक्षरी रुपये');
     expect(html).toContain('पंचेचाळीस हजार रुपये फक्त');
     expect(html).toContain('अटी व शर्ती');
-    expect(html).toContain('अधिकृत शिक्का');
+    expect(html).toContain('stamp-image');
+    expect(html).toContain('signature-image');
   });
 
   it('calls openPdf safely', async () => {

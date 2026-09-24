@@ -68,7 +68,7 @@ export const InvoiceListScreen: React.FC = () => {
         case 'paid':
           return isMarathi ? 'पूर्ण जमा' : 'Paid';
         case 'partial':
-          return isMarathi ? 'अॅडव्हान्स' : 'Advance';
+          return isMarathi ? 'अ‍ॅडव्हान्स' : 'Advance';
         case 'pending':
         default:
           return isMarathi ? 'देणे बाकी' : 'Not Paid';
@@ -158,7 +158,7 @@ export const InvoiceListScreen: React.FC = () => {
             let tabLabel = tab.toUpperCase();
             if (tab === 'all') tabLabel = isMarathi ? 'सर्व' : 'All';
             if (tab === 'pending') tabLabel = isMarathi ? 'बाकी' : 'Pending';
-            if (tab === 'partial') tabLabel = isMarathi ? 'अॅडव्हान्स' : 'Advance';
+            if (tab === 'partial') tabLabel = isMarathi ? 'अ‍ॅडव्हान्स' : 'Advance';
             if (tab === 'paid') tabLabel = isMarathi ? 'जमा' : 'Paid';
 
             return (
@@ -207,8 +207,8 @@ export const InvoiceListScreen: React.FC = () => {
                   ? 'बिलिंग टॅबमध्ये पहिले कोटेशन जतन करा आणि इनव्हॉइस आपोआप तयार होईल.'
                   : 'Save your first quotation in the Billing tab to automatically generate invoices.'
                 : isMarathi
-                ? 'कोणतेही इनव्हॉइस शोध परिणामांशी जुळत नाही.'
-                : 'No invoices match your current search and filter criteria.'}
+                  ? 'कोणतेही इनव्हॉइस शोध परिणामांशी जुळत नाही.'
+                  : 'No invoices match your current search and filter criteria.'}
             </Text>
           </View>
         }

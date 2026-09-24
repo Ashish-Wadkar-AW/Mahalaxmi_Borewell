@@ -161,7 +161,8 @@ export const ExpenseScreen: React.FC = () => {
             <View style={styles.recordBody}>
               {item.vendorPerson ? (
                 <Text style={styles.vendorText}>
-                  Vendor / Person: <Text style={styles.boldText}>{item.vendorPerson}</Text>
+                  {isMarathi ? 'विक्रेता / व्यक्ती: ' : 'Vendor / Person: '}
+                  <Text style={styles.boldText}>{item.vendorPerson}</Text>
                 </Text>
               ) : null}
               {item.description ? (
@@ -171,7 +172,15 @@ export const ExpenseScreen: React.FC = () => {
 
             <View style={styles.recordFooter}>
               <Badge
-                label={item.paymentMethod.replace('_', ' ')}
+                label={
+                  item.paymentMethod === 'cash'
+                    ? isMarathi ? 'रोख' : 'Cash'
+                    : item.paymentMethod === 'upi'
+                    ? 'UPI'
+                    : item.paymentMethod === 'bank_transfer'
+                    ? isMarathi ? 'बँक' : 'Bank Transfer'
+                    : isMarathi ? 'चेक' : 'Cheque'
+                }
                 variant="neutral"
                 size="sm"
               />
@@ -186,9 +195,13 @@ export const ExpenseScreen: React.FC = () => {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Icon name="trendingDown" size={48} color={colors.gray400} />
-            <Text style={styles.emptyTitle}>No Expenses Logged</Text>
+            <Text style={styles.emptyTitle}>
+              {isMarathi ? 'कोणताही खर्च नोंदवलेला नाही' : 'No Expenses Logged'}
+            </Text>
             <Text style={styles.emptySubtitle}>
-              Tap the "+ Add Expense" button above to log borewell equipment, fuel, transport, and labor expenses.
+              {isMarathi
+                ? 'बोअरवेल साहित्य, डिझेल/इंधन, वाहतूक किंवा मजुरी खर्च नोंदवण्यासाठी वरील "+ खर्च नोंदवा" बटणावर टॅप करा.'
+                : 'Tap the "+ Add Expense" button above to log borewell equipment, fuel, transport, and labor expenses.'}
             </Text>
           </View>
         }
@@ -199,7 +212,9 @@ export const ExpenseScreen: React.FC = () => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Record Expense / Outcome</Text>
+              <Text style={styles.modalTitle}>
+                {isMarathi ? 'खर्च / जावक नोंदवा' : 'Record Expense / Outcome'}
+              </Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
                 <Icon name="close" size={22} color={colors.textPrimary} />
               </TouchableOpacity>
@@ -207,38 +222,48 @@ export const ExpenseScreen: React.FC = () => {
 
             <ScrollView style={styles.modalBody}>
               <Input
-                label="Amount"
+                label={isMarathi ? 'रक्कम' : 'Amount'}
                 value={amount}
                 onChangeText={setAmount}
-                placeholder="e.g. 15000"
+                placeholder={isMarathi ? 'उदा. १५०००' : 'e.g. 15000'}
                 keyboardType="numeric"
                 prefix="₹"
                 required
               />
 
               <Input
-                label="Category"
+                label={isMarathi ? 'प्रवर्ग (Category)' : 'Category'}
                 value={category}
                 onChangeText={setCategory}
-                placeholder="Pipes, Wire Cable, Transport, Labor, Fuel"
+                placeholder={
+                  isMarathi
+                    ? 'पाईप्स, वायर केबल, वाहतूक, मजुरी, डिझेल'
+                    : 'Pipes, Wire Cable, Transport, Labor, Fuel'
+                }
               />
 
               <Input
-                label="Vendor / Person"
+                label={isMarathi ? 'विक्रेता / व्यक्ती' : 'Vendor / Person'}
                 value={vendorPerson}
                 onChangeText={setVendorPerson}
-                placeholder="Supplier, Driver, or Technician"
+                placeholder={
+                  isMarathi
+                    ? 'पुरवठादार, चालक किंवा तंत्रज्ञ'
+                    : 'Supplier, Driver, or Technician'
+                }
               />
 
               <Input
-                label="Date"
+                label={isMarathi ? 'तारीख' : 'Date'}
                 value={date}
                 onChangeText={setDate}
                 placeholder="YYYY-MM-DD"
               />
 
               {/* Payment Method */}
-              <Text style={styles.methodLabel}>Payment Method</Text>
+              <Text style={styles.methodLabel}>
+                {isMarathi ? 'पेमेंट पद्धत' : 'Payment Method'}
+              </Text>
               <View style={styles.methodRow}>
                 {(['cash', 'upi', 'bank_transfer', 'cheque'] as const).map(m => (
                   <TouchableOpacity
@@ -253,23 +278,33 @@ export const ExpenseScreen: React.FC = () => {
                         styles.methodBtnText,
                         paymentMethod === m && styles.methodBtnTextActive,
                       ]}>
-                      {m === 'bank_transfer' ? 'Bank' : m.toUpperCase()}
+                      {m === 'cash'
+                        ? isMarathi ? 'रोख' : 'CASH'
+                        : m === 'upi'
+                        ? 'UPI'
+                        : m === 'bank_transfer'
+                        ? isMarathi ? 'बँक' : 'BANK'
+                        : isMarathi ? 'चेक' : 'CHEQUE'}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
               <Input
-                label="Description / Purpose"
+                label={isMarathi ? 'तपशील / कारण' : 'Description / Purpose'}
                 value={description}
                 onChangeText={setDescription}
-                placeholder="Details of the expenditure"
+                placeholder={
+                  isMarathi
+                    ? 'खर्चाचा सविस्तर तपशील'
+                    : 'Details of the expenditure'
+                }
                 multiline
                 numberOfLines={2}
               />
 
               <Button
-                title="Save Expense / Outcome"
+                title={isMarathi ? 'खर्च जतन करा' : 'Save Expense / Outcome'}
                 variant="danger"
                 onPress={handleSaveExpense}
                 icon="save"

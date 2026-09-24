@@ -14,6 +14,7 @@ import { formatParticularsText, numberToWordsMarathi } from '../../utils/quotati
 import {
   AppLanguage,
   setLanguage as setGlobalLanguage,
+  setLanguageThunk,
   loadStoredLanguageThunk,
 } from './languageSlice';
 
@@ -738,6 +739,15 @@ export const billingSlice = createSlice({
       }
     });
     builder.addCase(loadStoredLanguageThunk.fulfilled, (state, action) => {
+      state.language = action.payload;
+      if (!state.isAmountInWordsCustom && state.grandTotal > 0) {
+        state.amountInWords =
+          action.payload === 'mr'
+            ? numberToWordsMarathi(state.grandTotal)
+            : CalculationService.numberToWordsIndian(state.grandTotal);
+      }
+    });
+    builder.addCase(setLanguageThunk.fulfilled, (state, action) => {
       state.language = action.payload;
       if (!state.isAmountInWordsCustom && state.grandTotal > 0) {
         state.amountInWords =

@@ -330,7 +330,7 @@ export const QuotationDetailScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <Header
-        title={`कोटेशन ${qNumber}`}
+        title={`${isMarathi ? 'कोटेशन' : 'Quotation'} ${qNumber}`}
         subtitle={`${isMarathi ? 'दिनांक' : 'Issued on'} ${quotation.date}`}
         showBack
         onBackPress={handleBack}
@@ -363,14 +363,14 @@ export const QuotationDetailScreen: React.FC = () => {
                 quotation.status === 'approved'
                   ? 'success'
                   : quotation.status === 'invoiced'
-                  ? 'info'
-                  : quotation.status === 'completed'
-                  ? 'primary'
-                  : quotation.status === 'in_progress'
-                  ? 'warning'
-                  : quotation.status === 'rejected'
-                  ? 'danger'
-                  : 'neutral'
+                    ? 'info'
+                    : quotation.status === 'completed'
+                      ? 'primary'
+                      : quotation.status === 'in_progress'
+                        ? 'warning'
+                        : quotation.status === 'rejected'
+                          ? 'danger'
+                          : 'neutral'
               }
             />
           </View>
@@ -412,15 +412,15 @@ export const QuotationDetailScreen: React.FC = () => {
                     quotation.paymentStatus === 'paid'
                       ? isMarathi ? 'पूर्ण जमा' : 'Paid'
                       : quotation.paymentStatus === 'partial'
-                      ? isMarathi ? 'अॅडव्हान्स' : 'Advance'
-                      : isMarathi ? 'देणे बाकी' : 'Not Paid'
+                        ? isMarathi ? 'अ‍ॅडव्हान्स' : 'Advance'
+                        : isMarathi ? 'देणे बाकी' : 'Not Paid'
                   }
                   variant={
                     quotation.paymentStatus === 'paid'
                       ? 'success'
                       : quotation.paymentStatus === 'partial'
-                      ? 'warning'
-                      : 'danger'
+                        ? 'warning'
+                        : 'danger'
                   }
                   size="sm"
                 />
@@ -444,8 +444,8 @@ export const QuotationDetailScreen: React.FC = () => {
                     ₹ {(typeof quotation.paidAmount === 'number'
                       ? quotation.paidAmount
                       : quotation.paymentStatus === 'paid'
-                      ? quotation.totalAmount
-                      : 0
+                        ? quotation.totalAmount
+                        : 0
                     ).toLocaleString('en-IN')}
                   </Text>
                 </View>
@@ -460,15 +460,15 @@ export const QuotationDetailScreen: React.FC = () => {
                       (typeof quotation.remainingAmount === 'number'
                         ? quotation.remainingAmount
                         : quotation.paymentStatus === 'paid'
-                        ? 0
-                        : quotation.totalAmount
+                          ? 0
+                          : quotation.totalAmount
                       ) > 0 && styles.remainingAlertColor,
                     ]}>
                     ₹ {(typeof quotation.remainingAmount === 'number'
                       ? quotation.remainingAmount
                       : quotation.paymentStatus === 'paid'
-                      ? 0
-                      : quotation.totalAmount
+                        ? 0
+                        : quotation.totalAmount
                     ).toLocaleString('en-IN')}
                   </Text>
                 </View>
@@ -609,15 +609,15 @@ export const QuotationDetailScreen: React.FC = () => {
             typeof quotation.paidAmount === 'number'
               ? quotation.paidAmount
               : quotation.paymentStatus === 'paid'
-              ? quotation.totalAmount
-              : 0
+                ? quotation.totalAmount
+                : 0
           }
           remainingAmount={
             typeof quotation.remainingAmount === 'number'
               ? quotation.remainingAmount
               : quotation.paymentStatus === 'paid'
-              ? 0
-              : quotation.totalAmount
+                ? 0
+                : quotation.totalAmount
           }
         />
       </ScrollView>

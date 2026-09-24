@@ -114,60 +114,131 @@ class PdfModule(private val reactContext: ReactApplicationContext) :
                                     return@postDelayed
                                 }
 
-                                // view.contentHeight is in CSS pixels (at base 100% scale)
-                                val cssContentHeight = Math.max(1, view.contentHeight)
+                                val jsQuery = """
+                                    (function() {
+                                        try {
+                                            var sheet = document.querySelector('.document-sheet');
+                                            var table = document.querySelector('table');
+                                            var body = document.body;
+                                            var html = document.documentElement;
+                                            var h = Math.max(
+                                                sheet ? Math.ceil(sheet.getBoundingClientRect().height || sheet.scrollHeight || sheet.offsetHeight) : 0,
+                                                body ? Math.ceil(body.scrollHeight || body.offsetHeight) : 0,
+                                                html ? Math.ceil(html.scrollHeight || html.offsetHeight) : 0
+                                            );
+                                            var w = Math.max(
+                                                sheet ? Math.ceil(sheet.getBoundingClientRect().width || sheet.scrollWidth || sheet.offsetWidth) : 0,
+                                                body ? Math.ceil(body.scrollWidth || body.offsetWidth) : 0,
+                                                html ? Math.ceil(html.scrollWidth || html.offsetWidth) : 0
+                                            );
+                                            var tw = table ? Math.ceil(table.getBoundingClientRect().width || table.offsetWidth) : 0;
+                                            return JSON.stringify({
+                                                contentHeight: h,
+                                                contentWidth: w,
+                                                tableWidth: tw
+                                            });
+                                        } catch(e) {
+                                            return JSON.stringify({ error: e.message });
+                                        }
+                                    })()
+                                """.trimIndent()
 
-                                // CRITICAL FIX FOR 3 EXTRA BLANK PAGES:
-                                // Base pagination calculation strictly on unscaled A4 height (1123 CSS px).
-                                // For standard single-page quotation (e.g. Q-168, ~650px),
-                                // totalPages is Math.ceil(650.0 / 1123) = 1. NO EXTRA BLANK PAGES.
-                                // If quotation has many items (> 1123 CSS px), it flows naturally to page 2, 3, etc.
-                                val totalPages = Math.max(1, Math.ceil(cssContentHeight.toDouble() / a4BaseHeight).toInt())
+                                view.evaluateJavascript(jsQuery) { rawResult ->
+                                    if (isCompleted.get()) return@evaluateJavascript
 
-                                // High-resolution measured height for rendering buffer
-                                val scaledContentHeight = (cssContentHeight * printScale).toInt()
-                                val renderHeight = Math.max(pageHeight * totalPages, scaledContentHeight)
+                                    try {
+                                        var measuredHeight = 0
+                                        var measuredWidth = a4BaseWidth
+                                        var measuredTableWidth = 0
 
-                                view.measure(
-                                    View.MeasureSpec.makeMeasureSpec(pageWidth, View.MeasureSpec.EXACTLY),
-                                    View.MeasureSpec.makeMeasureSpec(renderHeight, View.MeasureSpec.EXACTLY)
-                                )
-                                view.layout(0, 0, pageWidth, renderHeight)
+                                        if (!rawResult.isNullOrEmpty() && rawResult != "null") {
+                                            try {
+                                                var cleanJson = rawResult
+                                                if (cleanJson.startsWith("\"") && cleanJson.endsWith("\"")) {
+                                                    cleanJson = org.json.JSONTokener(cleanJson).nextValue().toString()
+                                                }
+                                                val jsonObj = org.json.JSONObject(cleanJson)
+                                                measuredHeight = jsonObj.optInt("contentHeight", 0)
+                                                measuredWidth = jsonObj.optInt("contentWidth", a4BaseWidth)
+                                                measuredTableWidth = jsonObj.optInt("tableWidth", 0)
+                                            } catch (_: Exception) {}
+                                        }
 
-                                val document = PdfDocument()
+                                        // Fallback if JS returned 0
+                                        if (measuredHeight <= 0) {
+                                            val rawContentHeight = view.contentHeight
+                                            measuredHeight = if (rawContentHeight > a4BaseHeight * 1.5) {
+                                                (rawContentHeight / printScale).toInt()
+                                            } else {
+                                                rawContentHeight
+                                            }
+                                        }
 
-                                for (i in 0 until totalPages) {
-                                    val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, i + 1).create()
-                                    val page = document.startPage(pageInfo)
-                                    val canvas = page.canvas
-                                    canvas.save()
-                                    canvas.translate(0f, (-i * pageHeight).toFloat())
-                                    view.draw(canvas)
-                                    canvas.restore()
-                                    document.finishPage(page)
+                                        val cssContentHeight = Math.max(1, measuredHeight)
+                                        val contentWidth = if (measuredWidth > 0) measuredWidth else a4BaseWidth
+                                        val tableWidth = if (measuredTableWidth > 0) measuredTableWidth else 730
+
+                                        // GUARANTEE STRICT SINGLE PAGE FOR QUOTATION:
+                                        // Standard A4 height is 1123 CSS px.
+                                        // For standard quotation (which fits comfortably in ~600-800 CSS px),
+                                        // totalPages is strictly 1. Pages 2, 3, 4 will never exist.
+                                        val totalPages = if (cssContentHeight <= a4BaseHeight) {
+                                            1
+                                        } else {
+                                            Math.max(1, Math.ceil(cssContentHeight.toDouble() / a4BaseHeight).toInt())
+                                        }
+
+                                        val renderHeight = pageHeight * totalPages
+
+                                        view.measure(
+                                            View.MeasureSpec.makeMeasureSpec(pageWidth, View.MeasureSpec.EXACTLY),
+                                            View.MeasureSpec.makeMeasureSpec(renderHeight, View.MeasureSpec.EXACTLY)
+                                        )
+                                        view.layout(0, 0, pageWidth, renderHeight)
+
+                                        val document = PdfDocument()
+
+                                        for (i in 0 until totalPages) {
+                                            val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, i + 1).create()
+                                            val page = document.startPage(pageInfo)
+                                            val canvas = page.canvas
+                                            canvas.save()
+                                            canvas.translate(0f, (-i * pageHeight).toFloat())
+                                            view.draw(canvas)
+                                            canvas.restore()
+                                            document.finishPage(page)
+                                        }
+
+                                        // 1. Save to temporary cache file first
+                                        val tempCacheFile = File(reactContext.cacheDir, "temp_${System.currentTimeMillis()}_$safeFileName")
+                                        FileOutputStream(tempCacheFile).use { output ->
+                                            document.writeTo(output)
+                                        }
+                                        document.close()
+
+                                        try {
+                                            view.destroy()
+                                        } catch (_: Exception) {}
+
+                                        saveAndResolve(
+                                            tempCacheFile,
+                                            safeFileName,
+                                            totalPages,
+                                            cssContentHeight,
+                                            contentWidth,
+                                            tableWidth,
+                                            isCompleted,
+                                            mainHandler,
+                                            timeoutRunnable,
+                                            promise
+                                        )
+                                    } catch (e: Exception) {
+                                        mainHandler.removeCallbacks(timeoutRunnable)
+                                        if (isCompleted.compareAndSet(false, true)) {
+                                            promise.reject("PDF_GEN_ERROR", "Error generating or saving PDF: ${e.message}", e)
+                                        }
+                                    }
                                 }
-
-                                // 1. Save to temporary cache file first
-                                val tempCacheFile = File(reactContext.cacheDir, "temp_${System.currentTimeMillis()}_$safeFileName")
-                                FileOutputStream(tempCacheFile).use { output ->
-                                    document.writeTo(output)
-                                }
-                                document.close()
-
-                                try {
-                                    view.destroy()
-                                } catch (_: Exception) {}
-
-                                saveAndResolve(
-                                    tempCacheFile,
-                                    safeFileName,
-                                    totalPages,
-                                    cssContentHeight,
-                                    isCompleted,
-                                    mainHandler,
-                                    timeoutRunnable,
-                                    promise
-                                )
                             } catch (e: Exception) {
                                 mainHandler.removeCallbacks(timeoutRunnable)
                                 if (isCompleted.compareAndSet(false, true)) {
@@ -194,6 +265,8 @@ class PdfModule(private val reactContext: ReactApplicationContext) :
         safeFileName: String,
         pageCount: Int,
         contentHeight: Int,
+        contentWidth: Int,
+        tableWidth: Int,
         isCompleted: AtomicBoolean,
         mainHandler: Handler,
         timeoutRunnable: Runnable,
@@ -323,6 +396,8 @@ class PdfModule(private val reactContext: ReactApplicationContext) :
                     putString("generatedPath", generatedTempPath)
                     putInt("pageCount", pageCount)
                     putInt("contentHeight", contentHeight)
+                    putInt("contentWidth", contentWidth)
+                    putInt("tableWidth", tableWidth)
                 }
                 promise.resolve(result)
             }

@@ -223,12 +223,22 @@ export const RemindersScreen: React.FC = () => {
 
                 <View style={styles.badgeGroup}>
                   <Badge
-                    label={item.type}
+                    label={
+                      item.type === 'client'
+                        ? isMarathi ? 'ग्राहक' : 'Client'
+                        : isMarathi ? 'वैयक्तिक' : 'Personal'
+                    }
                     variant={item.type === 'client' ? 'primary' : 'info'}
                     size="sm"
                   />
                   <Badge
-                    label={item.priority}
+                    label={
+                      item.priority === 'low'
+                        ? isMarathi ? 'कमी' : 'Low'
+                        : item.priority === 'medium'
+                        ? isMarathi ? 'मध्यम' : 'Medium'
+                        : isMarathi ? 'उच्च' : 'High'
+                    }
                     variant={priorityVariant}
                     size="sm"
                   />
@@ -240,9 +250,13 @@ export const RemindersScreen: React.FC = () => {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Icon name="clock" size={48} color={colors.gray400} />
-            <Text style={styles.emptyTitle}>No Reminders Found</Text>
+            <Text style={styles.emptyTitle}>
+              {isMarathi ? 'कोणतेही स्मरणपत्र नाही' : 'No Reminders Found'}
+            </Text>
             <Text style={styles.emptySubtitle}>
-              Tap the "+ Add Reminder" button to set client callbacks or personal schedule alerts.
+              {isMarathi
+                ? 'ग्राहक पाठपुरावा किंवा वैयक्तिक कामांसाठी वरील "+ स्मरणपत्र जोडा" बटणावर टॅप करा.'
+                : 'Tap the "+ Add Reminder" button to set client callbacks or personal schedule alerts.'}
             </Text>
           </View>
         }
@@ -253,7 +267,9 @@ export const RemindersScreen: React.FC = () => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Reminder</Text>
+              <Text style={styles.modalTitle}>
+                {isMarathi ? 'नवीन स्मरणपत्र' : 'New Reminder'}
+              </Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
                 <Icon name="close" size={22} color={colors.textPrimary} />
               </TouchableOpacity>
@@ -261,18 +277,26 @@ export const RemindersScreen: React.FC = () => {
 
             <ScrollView style={styles.modalBody}>
               <Input
-                label="Reminder Title"
+                label={isMarathi ? 'स्मरणपत्र शीर्षक' : 'Reminder Title'}
                 value={title}
                 onChangeText={setTitle}
-                placeholder="e.g. Call Hanbarwadi site for pipe delivery"
+                placeholder={
+                  isMarathi
+                    ? 'उदा. पाईप डिलिव्हरीसाठी हणबरवाडी साईटवर कॉल'
+                    : 'e.g. Call Hanbarwadi site for pipe delivery'
+                }
                 required
               />
 
               <Input
-                label="Description"
+                label={isMarathi ? 'तपशील' : 'Description'}
                 value={description}
                 onChangeText={setDescription}
-                placeholder="Details or phone numbers"
+                placeholder={
+                  isMarathi
+                    ? 'फोन नंबर किंवा इतर महत्त्वाची माहिती'
+                    : 'Details or phone numbers'
+                }
                 multiline
                 numberOfLines={2}
               />
@@ -280,7 +304,7 @@ export const RemindersScreen: React.FC = () => {
               <View style={styles.rowTwo}>
                 <View style={styles.halfCol}>
                   <Input
-                    label="Date"
+                    label={isMarathi ? 'तारीख' : 'Date'}
                     value={date}
                     onChangeText={setDate}
                     placeholder="YYYY-MM-DD"
@@ -288,16 +312,18 @@ export const RemindersScreen: React.FC = () => {
                 </View>
                 <View style={styles.halfCol}>
                   <Input
-                    label="Time"
+                    label={isMarathi ? 'वेळ' : 'Time'}
                     value={time}
                     onChangeText={setTime}
-                    placeholder="e.g. 10:30 AM"
+                    placeholder={isMarathi ? 'उदा. १०:३० AM' : 'e.g. 10:30 AM'}
                   />
                 </View>
               </View>
 
               {/* Type Selector */}
-              <Text style={styles.selectorLabel}>Reminder Type</Text>
+              <Text style={styles.selectorLabel}>
+                {isMarathi ? 'स्मरणपत्र प्रकार' : 'Reminder Type'}
+              </Text>
               <View style={styles.selectorRow}>
                 <TouchableOpacity
                   onPress={() => setType('client')}
@@ -310,7 +336,7 @@ export const RemindersScreen: React.FC = () => {
                       styles.selectorBtnText,
                       type === 'client' && styles.selectorBtnTextActive,
                     ]}>
-                    Client Reminder
+                    {isMarathi ? 'ग्राहक स्मरणपत्र' : 'Client Reminder'}
                   </Text>
                 </TouchableOpacity>
 
@@ -325,13 +351,15 @@ export const RemindersScreen: React.FC = () => {
                       styles.selectorBtnText,
                       type === 'personal' && styles.selectorBtnTextActive,
                     ]}>
-                    Personal Reminder
+                    {isMarathi ? 'वैयक्तिक स्मरणपत्र' : 'Personal Reminder'}
                   </Text>
                 </TouchableOpacity>
               </View>
 
               {/* Priority Selector */}
-              <Text style={styles.selectorLabel}>Priority</Text>
+              <Text style={styles.selectorLabel}>
+                {isMarathi ? 'प्राधान्य' : 'Priority'}
+              </Text>
               <View style={styles.selectorRow}>
                 {(['low', 'medium', 'high'] as const).map(p => (
                   <TouchableOpacity
@@ -346,14 +374,18 @@ export const RemindersScreen: React.FC = () => {
                         styles.selectorBtnText,
                         priority === p && styles.selectorBtnTextActive,
                       ]}>
-                      {p.toUpperCase()}
+                      {p === 'low'
+                        ? isMarathi ? 'कमी' : 'LOW'
+                        : p === 'medium'
+                        ? isMarathi ? 'मध्यम' : 'MEDIUM'
+                        : isMarathi ? 'उच्च' : 'HIGH'}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
               <Button
-                title="Schedule Reminder"
+                title={isMarathi ? 'स्मरणपत्र जतन करा' : 'Schedule Reminder'}
                 onPress={handleSaveReminder}
                 icon="save"
                 style={styles.saveBtn}

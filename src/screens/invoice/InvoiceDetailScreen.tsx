@@ -109,16 +109,14 @@ export const InvoiceDetailScreen: React.FC = () => {
           type: 'success',
           title: isMarathi ? 'पेमेंट स्थिती अपडेट झाली' : 'Payment Status Updated',
           message: isMarathi
-            ? `इनव्हॉइस स्थिती ${
-                newStatus === 'paid'
-                  ? 'पूर्ण जमा (PAID)'
-                  : 'देणे बाकी (NOT PAID)'
-              } केली गेली.`
-            : `Invoice status changed to ${
-                newStatus === 'paid'
-                  ? 'PAID'
-                  : 'NOT PAID'
-              }`,
+            ? `इनव्हॉइस स्थिती ${newStatus === 'paid'
+              ? 'पूर्ण जमा'
+              : 'देणे बाकी'
+            } केली गेली.`
+            : `Invoice status changed to ${newStatus === 'paid'
+              ? 'PAID'
+              : 'NOT PAID'
+            }`,
         }),
       );
     }
@@ -132,7 +130,7 @@ export const InvoiceDetailScreen: React.FC = () => {
           type: 'error',
           title: isMarathi ? 'अवैध रक्कम' : 'Invalid Amount',
           message: isMarathi
-            ? 'कृपया वैध अॅडव्हान्स रक्कम प्रविष्ट करा (>= 0).'
+            ? 'कृपया वैध अ‍ॅडव्हान्स रक्कम प्रविष्ट करा (>= 0).'
             : 'Please enter a valid advance amount (>= 0).',
         }),
       );
@@ -143,9 +141,9 @@ export const InvoiceDetailScreen: React.FC = () => {
       dispatch(
         showFeedback({
           type: 'error',
-          title: isMarathi ? 'अवैध अॅडव्हान्स रक्कम' : 'Invalid Advance Amount',
+          title: isMarathi ? 'अवैध अ‍ॅडव्हान्स रक्कम' : 'Invalid Advance Amount',
           message: isMarathi
-            ? `अॅडव्हान्स रक्कम एकूण रकमेपेक्षा (₹${invoice.grandTotal.toLocaleString('en-IN')}) जास्त असू शकत नाही.`
+            ? `अ‍ॅडव्हान्स रक्कम एकूण रकमेपेक्षा (₹${invoice.grandTotal.toLocaleString('en-IN')}) जास्त असू शकत नाही.`
             : `Advance amount cannot exceed Grand Total (₹${invoice.grandTotal.toLocaleString('en-IN')}).`,
         }),
       );
@@ -181,7 +179,7 @@ export const InvoiceDetailScreen: React.FC = () => {
           type: 'success',
           title: isMarathi ? 'पेमेंट स्थिती अपडेट झाली' : 'Payment Status Updated',
           message: isMarathi
-            ? `अॅडव्हान्स रक्कम ₹${roundedPaid.toLocaleString('en-IN')} अपडेट केली गेली.`
+            ? `अ‍ॅडव्हान्स रक्कम ₹${roundedPaid.toLocaleString('en-IN')} अपडेट केली गेली.`
             : `Advance amount ₹${roundedPaid.toLocaleString('en-IN')} updated successfully.`,
         }),
       );
@@ -213,51 +211,51 @@ export const InvoiceDetailScreen: React.FC = () => {
   const quotationItems =
     invoice.items && invoice.items.length > 0
       ? invoice.items.map(it => {
-          let parsedSpecs: Record<string, any> = {};
-          if (it.itemSpecs) {
-            try {
-              parsedSpecs = JSON.parse(it.itemSpecs);
-            } catch {}
-          }
-          return {
-            srNo: it.srNo,
-            particularsMr: it.particularsMr || it.description,
-            particularsEn: it.particularsEn || it.description,
-            quantity: it.quantity,
-            rate: it.rate,
-            total: it.total,
-            specs: parsedSpecs,
-          };
-        })
+        let parsedSpecs: Record<string, any> = {};
+        if (it.itemSpecs) {
+          try {
+            parsedSpecs = JSON.parse(it.itemSpecs);
+          } catch { }
+        }
+        return {
+          srNo: it.srNo,
+          particularsMr: it.particularsMr || it.description,
+          particularsEn: it.particularsEn || it.description,
+          quantity: it.quantity,
+          rate: it.rate,
+          total: it.total,
+          specs: parsedSpecs,
+        };
+      })
       : (associatedBill?.items || []).map(it => {
-          let parsedSpecs: Record<string, any> = {};
-          if (it.itemSpecs) {
-            try {
-              parsedSpecs = JSON.parse(it.itemSpecs);
-            } catch {}
-          }
-          return {
-            srNo: it.srNo,
-            particularsMr: it.particularsMr,
-            particularsEn: it.particularsEn,
-            quantity: it.quantity,
-            rate: it.rate,
-            total: it.total,
-            specs: parsedSpecs,
-          };
-        });
+        let parsedSpecs: Record<string, any> = {};
+        if (it.itemSpecs) {
+          try {
+            parsedSpecs = JSON.parse(it.itemSpecs);
+          } catch { }
+        }
+        return {
+          srNo: it.srNo,
+          particularsMr: it.particularsMr,
+          particularsEn: it.particularsEn,
+          quantity: it.quantity,
+          rate: it.rate,
+          total: it.total,
+          specs: parsedSpecs,
+        };
+      });
 
   const paidDisplay = typeof invoice.paidAmount === 'number'
     ? invoice.paidAmount
     : invoice.paymentStatus === 'paid'
-    ? invoice.grandTotal
-    : 0;
+      ? invoice.grandTotal
+      : 0;
 
   const remainingDisplay = typeof invoice.remainingAmount === 'number'
     ? invoice.remainingAmount
     : invoice.paymentStatus === 'paid'
-    ? 0
-    : invoice.grandTotal;
+      ? 0
+      : invoice.grandTotal;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -293,17 +291,17 @@ export const InvoiceDetailScreen: React.FC = () => {
             <Badge
               label={
                 invoice.paymentStatus === 'paid'
-                  ? isMarathi ? 'पूर्ण जमा (PAID)' : 'PAID'
+                  ? isMarathi ? 'पूर्ण जमा' : 'PAID'
                   : invoice.paymentStatus === 'partial'
-                  ? isMarathi ? 'अॅडव्हान्स (ADVANCE)' : 'ADVANCE'
-                  : isMarathi ? 'देणे बाकी (NOT PAID)' : 'NOT PAID'
+                    ? isMarathi ? 'अ‍ॅडव्हान्स' : 'ADVANCE'
+                    : isMarathi ? 'देणे बाकी' : 'NOT PAID'
               }
               variant={
                 invoice.paymentStatus === 'paid'
                   ? 'success'
                   : invoice.paymentStatus === 'partial'
-                  ? 'warning'
-                  : 'danger'
+                    ? 'warning'
+                    : 'danger'
               }
             />
           </View>
@@ -328,10 +326,10 @@ export const InvoiceDetailScreen: React.FC = () => {
                       isActive && styles.statusChipTextActive,
                     ]}>
                     {st === 'pending'
-                      ? isMarathi ? 'देणे बाकी (Not Paid)' : 'Not Paid'
+                      ? isMarathi ? 'देणे बाकी' : 'Not Paid'
                       : st === 'partial'
-                      ? isMarathi ? 'अॅडव्हान्स (Advance)' : 'Advance'
-                      : isMarathi ? 'पूर्ण जमा (Paid)' : 'Paid'}
+                        ? isMarathi ? 'अ‍ॅडव्हान्स' : 'Advance'
+                        : isMarathi ? 'पूर्ण जमा' : 'Paid'}
                   </Text>
                 </TouchableOpacity>
               );
@@ -343,7 +341,7 @@ export const InvoiceDetailScreen: React.FC = () => {
             <View style={styles.advanceInputCard}>
               <Text style={styles.advanceInputLabel}>
                 {isMarathi
-                  ? 'अॅडव्हान्स / जमा रक्कम प्रविष्ट करा (₹):'
+                  ? 'अ‍ॅडव्हान्स / जमा रक्कम प्रविष्ट करा (₹):'
                   : 'Enter Advance / Paid Amount (₹):'}
               </Text>
               <View style={styles.advanceInputRow}>
@@ -370,7 +368,7 @@ export const InvoiceDetailScreen: React.FC = () => {
           <View style={styles.paymentAmountsRow}>
             <View style={styles.paymentCol}>
               <Text style={styles.paymentColLabel}>
-                {isMarathi ? 'जमा रक्कम (Paid)' : 'Paid Amount'}
+                {isMarathi ? 'जमा रक्कम' : 'Paid Amount'}
               </Text>
               <Text style={styles.paymentPaidText}>
                 ₹ {paidDisplay.toLocaleString('en-IN')}
@@ -381,7 +379,7 @@ export const InvoiceDetailScreen: React.FC = () => {
 
             <View style={styles.paymentCol}>
               <Text style={styles.paymentColLabel}>
-                {isMarathi ? 'उर्वरित बाकी (Remaining)' : 'Remaining Amount'}
+                {isMarathi ? 'उर्वरित बाकी' : 'Remaining Amount'}
               </Text>
               <Text
                 style={[
