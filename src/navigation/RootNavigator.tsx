@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from 'react';
-import { View, ActivityIndicator, StyleSheet, AppState, AppStateStatus } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { LoginScreen } from '../screens/auth/LoginScreen';
+import { SplashScreen } from '../screens/splash/SplashScreen';
 import { MainTabNavigator } from './MainTabNavigator';
 import { RootStackParamList } from '../types/navigation';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
@@ -13,8 +14,6 @@ import {
 } from '../redux/slices/authSlice';
 import { loadStoredLanguageThunk } from '../redux/slices/languageSlice';
 import { showFeedback } from '../redux/slices/feedbackSlice';
-import { colors } from '../theme';
-import { RigLogo } from '../components/common/RigLogo';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -23,20 +22,37 @@ export const RootNavigator: React.FC = () => {
   const { isAuthenticated, isCheckingSession, sessionExpiredDialog } =
     useAppSelector(state => state.auth);
 
+  const [minSplashDone, setMinSplashDone] = useState(false);
+  const [initialLaunchDone, setInitialLaunchDone] = useState(false);
   const appState = useRef(AppState.currentState);
 
-  // Check session and load language at app startup with safety fallback timeout
+  // Check session and load language at app startup with 4-second opening splash duration
   useEffect(() => {
     dispatch(checkSessionThunk());
     dispatch(loadStoredLanguageThunk());
 
-    // Failsafe: splash screen must NEVER hang indefinitely under any native circumstance
-    const timeout = setTimeout(() => {
-      dispatch(forceFinishSessionCheck());
-    }, 2500);
+    // 4-second timer for the opening splash screen
+    const splashTimer = setTimeout(() => {
+      setMinSplashDone(true);
+    }, 4000);
 
-    return () => clearTimeout(timeout);
+    // Failsafe: session check must NEVER hang indefinitely under any native circumstance
+    const failsafeTimeout = setTimeout(() => {
+      dispatch(forceFinishSessionCheck());
+    }, 5000);
+
+    return () => {
+      clearTimeout(splashTimer);
+      clearTimeout(failsafeTimeout);
+    };
   }, [dispatch]);
+
+  // Transition from opening splash screen once both 4 seconds have passed and session check is ready
+  useEffect(() => {
+    if (minSplashDone && !isCheckingSession && !initialLaunchDone) {
+      setInitialLaunchDone(true);
+    }
+  }, [minSplashDone, isCheckingSession, initialLaunchDone]);
 
   // Check session when app returns from background
   useEffect(() => {
@@ -76,17 +92,8 @@ export const RootNavigator: React.FC = () => {
     }
   }, [sessionExpiredDialog, dispatch]);
 
-  if (isCheckingSession) {
-    return (
-      <View style={styles.splashContainer}>
-        <RigLogo size={70} color={colors.primary} showText={true} />
-        <ActivityIndicator
-          size="large"
-          color={colors.primary}
-          style={styles.spinner}
-        />
-      </View>
-    );
+  if (!initialLaunchDone) {
+    return <SplashScreen />;
   }
 
   return (
@@ -101,15 +108,3 @@ export const RootNavigator: React.FC = () => {
     </NavigationContainer>
   );
 };
-
-const styles = StyleSheet.create({
-  splashContainer: {
-    flex: 1,
-    backgroundColor: colors.surfacePaper,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  spinner: {
-    marginTop: 20,
-  },
-});
