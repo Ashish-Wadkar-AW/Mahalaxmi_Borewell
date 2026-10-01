@@ -110,21 +110,33 @@ export const PaymentInformationScreen: React.FC = () => {
         }
       }
 
+      console.log('[BILLING][SAVE][START]', {
+        customerName: billing.customerName.trim(),
+        totalAmount: billing.grandTotal,
+        paymentStatus: billing.paymentStatus,
+      });
+
       const result = await dispatch(saveQuotationThunk());
       if (saveQuotationThunk.fulfilled.match(result)) {
         const savedQuotation = result.payload.quotation;
         const qId = savedQuotation.id;
         const qNum = savedQuotation.quotationNumber || savedQuotation.billNumber || 'Q-001';
 
-        console.log('[QUOTATION][SAVE][SUCCESS]', {
-          quotationId: qId,
-          quotationNumber: qNum,
+        console.log('[BILLING][SAVE][SUCCESS]', { billId: qId });
+        console.log('[BILLING][QUOTATION][SUCCESS]', { quotationId: qId });
+
+        // 1. Reset temporary billing wizard state after confirmation of successful persistence
+        dispatch(resetBillingForm());
+        dispatch(fetchNextBillNumberThunk());
+        console.log('[BILLING][STATE][RESET]');
+
+        // 2. Reset navigation stack of BillingStackNavigator so it starts at Step 1 (CustomerInformation)
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'CustomerInformation' }],
         });
 
-        console.log('[QUOTATION][POPUP][OPEN]', {
-          quotationId: qId,
-          quotationNumber: qNum,
-        });
+        console.log('[BILLING][NAVIGATION][QUOTATION]', { quotationId: qId });
 
         dispatch(
           showFeedback({
@@ -133,15 +145,9 @@ export const PaymentInformationScreen: React.FC = () => {
             message: isMarathi
               ? 'बिलिंग यशस्वीरित्या जतन झाले आहे.'
               : 'Billing saved successfully.',
-            confirmText: isMarathi ? 'कोटेशन तयार करा' : 'Generate Quotation',
+            confirmText: isMarathi ? 'कोटेशन पहा' : 'View Quotation',
             dismissible: false,
             onConfirm: () => {
-              console.log('[QUOTATION][POPUP][GENERATE]', {
-                quotationId: qId,
-              });
-              console.log('[QUOTATION][NAVIGATION][GENERATE]', {
-                quotationId: qId,
-              });
               navigation.navigate('QuotationTab', {
                 screen: 'QuotationDetail',
                 params: {
@@ -152,8 +158,6 @@ export const PaymentInformationScreen: React.FC = () => {
             },
           }),
         );
-        dispatch(resetBillingForm());
-        dispatch(fetchNextBillNumberThunk());
       } else if (saveQuotationThunk.rejected.match(result)) {
         if ((result as any).meta?.condition) {
           return;

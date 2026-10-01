@@ -1,9 +1,11 @@
 import { db } from '../DatabaseService';
 import {
+  CustomerEntity,
   QuotationEntity,
   QuotationItemEntity,
   QuotationStatus,
 } from '../../types/database';
+import { CustomerRepository } from './CustomerRepository';
 
 export class QuotationRepository {
   public static async getAllQuotations(): Promise<QuotationEntity[]> {
@@ -151,19 +153,56 @@ export class QuotationRepository {
         remainingAmount,
       };
 
-      console.log('[QUOTATION][SAVE][REQUEST]', quotationToSave);
+      // Ensure customer exists in customers table
+      let verifiedCustomer = quotationToSave.customerId
+        ? await db.getById<CustomerEntity>('customers', quotationToSave.customerId)
+        : null;
+
+      if (!verifiedCustomer) {
+        if (quotationToSave.customerId && quotationToSave.customerId.trim() !== '') {
+          verifiedCustomer = await CustomerRepository.createCustomer({
+            id: quotationToSave.customerId,
+            name: quotationToSave.customerName,
+            mobileNumber: quotationToSave.customerPhone,
+            address: quotationToSave.customerAddress,
+          });
+        } else {
+          verifiedCustomer = await CustomerRepository.findOrCreateCustomer(
+            quotationToSave.customerName,
+            quotationToSave.customerPhone,
+            quotationToSave.customerAddress,
+          );
+        }
+        quotationToSave.customerId = verifiedCustomer.id;
+      }
+
+      console.log('[BILL][CUSTOMER][VERIFY]', {
+        customerId: quotationToSave.customerId,
+        exists: !!verifiedCustomer,
+      });
+
+      console.log('[BILL][INSERT][VALIDATION]', {
+        id: quotationToSave.id,
+        customerId: quotationToSave.customerId,
+        customerName: quotationToSave.customerName,
+        totalAmount: quotationToSave.totalAmount,
+        paymentStatus: quotationToSave.paymentStatus,
+      });
+
+      if (!verifiedCustomer || !quotationToSave.customerId) {
+        console.error('[BILL][INSERT][VALIDATION_ERROR] customerId is missing');
+        throw new Error('Customer ID is required before saving quotation');
+      }
+
+      console.log('========== QUOTATION SAVE REQUEST ==========');
+      console.log('[QUOTATION][INSERT][REQUEST]', quotationToSave);
 
       // Check if updating existing or inserting new
       const existing = await db.getById<QuotationEntity>('bills', quotationToSave.id);
 
       if (existing) {
         // Delete existing items to replace with updated items
-        const allItems = await db.getAll<QuotationItemEntity>('bill_items');
-        for (const it of allItems) {
-          if (it.billId === quotationToSave.id) {
-            await db.delete('bill_items', it.id);
-          }
-        }
+        await db.deleteWhere('bill_items', 'billId', quotationToSave.id);
 
         console.log('========== BILL UPDATE REQUEST ==========');
         console.log('[BILL][UPDATE][REQUEST]', quotationToSave);
@@ -175,7 +214,15 @@ export class QuotationRepository {
 
         const updatedBill = await db.getById<QuotationEntity>('bills', quotationToSave.id);
         console.log('========== BILL UPDATE READ BACK ==========');
-        console.log('[BILL][UPDATE][READBACK]', updatedBill);
+        console.log('[BILL][UPDATE][READBACK]', {
+          id: updatedBill?.id,
+          customerId: updatedBill?.customerId,
+          customerName: updatedBill?.customerName,
+          totalAmount: updatedBill?.totalAmount,
+          paymentStatus: updatedBill?.paymentStatus,
+          paidAmount: updatedBill?.paidAmount,
+          remainingAmount: updatedBill?.remainingAmount,
+        });
       } else {
         console.log('========== BILL INSERT REQUEST ==========');
         console.log('[BILL][INSERT][REQUEST]', {
@@ -197,19 +244,40 @@ export class QuotationRepository {
 
         const storedBill = await db.getById<QuotationEntity>('bills', quotationToSave.id);
         console.log('========== BILL INSERT READ BACK ==========');
-        console.log('[BILL][INSERT][READBACK]', storedBill);
+        console.log('[BILL][INSERT][READBACK]', {
+          id: storedBill?.id,
+          customerId: storedBill?.customerId,
+          customerName: storedBill?.customerName,
+          totalAmount: storedBill?.totalAmount,
+          paymentStatus: storedBill?.paymentStatus,
+          paidAmount: storedBill?.paidAmount,
+          remainingAmount: storedBill?.remainingAmount,
+        });
       }
 
       await db.insertMany<QuotationItemEntity>('bill_items', items);
 
       const freshSaved = await QuotationRepository.getQuotationById(quotationToSave.id);
-      console.log('[QUOTATION][SAVE][RESPONSE]', freshSaved);
-      console.log('[QUOTATION][SAVE][READBACK]', freshSaved);
+      console.log('========== QUOTATION SAVE RESPONSE ==========');
+      console.log('[QUOTATION][INSERT][RESPONSE]', freshSaved);
+      console.log('========== QUOTATION READ BACK ==========');
+      console.log('[QUOTATION][INSERT][READBACK]', freshSaved);
 
       return freshSaved || {
         ...quotationToSave,
         items,
       };
+    });
+  }
+
+  public static async updateQuotationPdfInfo(
+    id: string,
+    pdfUri: string,
+    pdfFileName: string,
+  ): Promise<QuotationEntity | null> {
+    return db.update<QuotationEntity>('bills', id, {
+      pdfUri,
+      pdfFileName,
     });
   }
 

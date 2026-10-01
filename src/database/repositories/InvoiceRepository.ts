@@ -1,5 +1,6 @@
 import { db } from '../DatabaseService';
 import { InvoiceEntity, InvoiceItemEntity, QuotationEntity } from '../../types/database';
+import { CustomerRepository } from './CustomerRepository';
 
 export class InvoiceRepository {
   public static async getAllInvoices(): Promise<InvoiceEntity[]> {
@@ -204,6 +205,15 @@ export class InvoiceRepository {
         updatedAt: new Date().toISOString(),
       };
 
+      if (!fullInvoice.customerId || fullInvoice.customerId.trim() === '') {
+        const resolved = await CustomerRepository.findOrCreateCustomer(
+          fullInvoice.customerName,
+          fullInvoice.customerPhone,
+          fullInvoice.customerAddress,
+        );
+        fullInvoice.customerId = resolved.id;
+      }
+
       console.log('========== INVOICE INSERT REQUEST ==========');
       console.log('[INVOICE][INSERT][REQUEST]', {
         id: fullInvoice.id,
@@ -249,6 +259,17 @@ export class InvoiceRepository {
         ...(storedInvoice || fullInvoice),
         items: invoiceItems,
       };
+    });
+  }
+
+  public static async updateInvoicePdfInfo(
+    id: string,
+    pdfUri: string,
+    pdfFileName: string,
+  ): Promise<InvoiceEntity | null> {
+    return db.update<InvoiceEntity>('invoices', id, {
+      pdfUri,
+      pdfFileName,
     });
   }
 

@@ -34,6 +34,10 @@ export const CREATE_TABLES_SQL = [
     borewellDepth REAL NOT NULL DEFAULT 0,
     waterBearing REAL NOT NULL DEFAULT 0,
     boreSize REAL NOT NULL DEFAULT 0,
+    vehicleNumber TEXT,
+    vehicleType TEXT,
+    vehicleDetails TEXT,
+    vehicle TEXT,
     totalAmount REAL NOT NULL DEFAULT 0,
     amountInWords TEXT,
     amountInWordsMarathi TEXT,
@@ -43,6 +47,8 @@ export const CREATE_TABLES_SQL = [
     paymentStatus TEXT NOT NULL DEFAULT 'pending',
     paidAmount REAL NOT NULL DEFAULT 0,
     remainingAmount REAL NOT NULL DEFAULT 0,
+    pdfUri TEXT,
+    pdfFileName TEXT,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL
   );`,
@@ -88,6 +94,8 @@ export const CREATE_TABLES_SQL = [
     paidAmount REAL NOT NULL DEFAULT 0,
     remainingAmount REAL NOT NULL DEFAULT 0,
     notes TEXT,
+    pdfUri TEXT,
+    pdfFileName TEXT,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
     FOREIGN KEY(billId) REFERENCES bills(id)

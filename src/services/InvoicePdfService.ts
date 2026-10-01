@@ -1,10 +1,10 @@
 import { NativeModules, Platform, Image } from 'react-native';
-import { QuotationEntity } from '../types/database';
+import { InvoiceEntity, InvoiceItemEntity } from '../types/database';
 import { CalculationService } from './CalculationService';
 import {
   formatParticularsText,
   numberToWordsMarathi,
-  generateQuotationPdfFileName,
+  generateInvoicePdfFileName,
 } from '../utils/quotationFormatters';
 import { LOGO_QUOTATION_BASE64 } from '../assets/images/logoBase64';
 import {
@@ -13,58 +13,55 @@ import {
 } from '../assets/images/stampSignatureBase64';
 import officialStampPng from '../assets/official_stamp.png';
 import authorizedSignaturePng from '../assets/authorized_signature.png';
+import {
+  GeneratePdfResult,
+  ExistingPdfResult,
+  QuotationPdfService,
+} from './QuotationPdfService';
+import { InvoiceRepository } from '../database/repositories/InvoiceRepository';
+import { BillRepository } from '../database/repositories/BillRepository';
 
 const getPdfModule = () => NativeModules.PdfModule;
 
-export interface GeneratePdfResult {
-  success: boolean;
-  uri: string;
-  filePath: string;
-  fileName: string;
-  generatedPath?: string;
-  pageCount?: number;
-  contentHeight?: number;
-  contentWidth?: number;
-  tableWidth?: number;
-}
-
-export interface ExistingPdfResult {
-  exists: boolean;
-  uri?: string;
-  filePath?: string;
-  fileName?: string;
-}
-
-export class QuotationPdfService {
+export class InvoicePdfService {
   /**
-   * Generates a unique, collision-safe filename for a quotation:
-   * <FirstNameFirst5Letters>_<YYYYMMDD>_<QuotationNumber>.pdf
-   * Fallback on collision: <FirstNameFirst5Letters>_<YYYYMMDD>_<QuotationNumber>_01.pdf
+   * Generates a unique, collision-safe filename for an invoice:
+   * <FirstNameFirst5Letters>_<YYYYMMDD>_<InvoiceNumber>.pdf
+   * Fallback on collision: <FirstNameFirst5Letters>_<YYYYMMDD>_<InvoiceNumber>_01.pdf
    */
-  public static async getUniqueQuotationPdfFileName(
-    quotation: QuotationEntity,
+  public static async getUniqueInvoicePdfFileName(
+    invoice: InvoiceEntity,
   ): Promise<string> {
     const rawCustomerName =
-      quotation.customerName ||
-      (quotation as any).name ||
-      (quotation as any).firstName ||
-      (quotation as any).customer ||
-      (quotation as any).clientName ||
+      invoice.customerName ||
+      (invoice as any).name ||
+      (invoice as any).firstName ||
+      (invoice as any).customer ||
+      (invoice as any).clientName ||
       '';
-    const quotationDate = quotation.date;
-    const quotationNumber = quotation.quotationNumber || quotation.billNumber || 'Q-001';
+    const invoiceDate = invoice.date;
+    const invoiceNumber = invoice.invoiceNumber || 'INV-001';
 
+    const pdfModule = getPdfModule();
     let collisionIndex = 0;
     while (true) {
-      const candidateFileName = generateQuotationPdfFileName(
+      const candidateFileName = generateInvoicePdfFileName(
         rawCustomerName,
-        quotationDate,
-        quotationNumber,
+        invoiceDate,
+        invoiceNumber,
         collisionIndex,
       );
 
-      const checkResult = await this.findExistingPdfByName(candidateFileName);
-      if (!checkResult.exists) {
+      if (!pdfModule || typeof pdfModule.findExistingPdf !== 'function') {
+        return candidateFileName;
+      }
+
+      try {
+        const checkResult = await pdfModule.findExistingPdf(candidateFileName);
+        if (!checkResult?.exists) {
+          return candidateFileName;
+        }
+      } catch {
         return candidateFileName;
       }
 
@@ -76,118 +73,143 @@ export class QuotationPdfService {
   }
 
   /**
-   * Generates a high-fidelity PDF from the quotation data matching QuotationDocumentView.
+   * Checks whether an invoice PDF already exists in the Downloads folder for a given invoice.
    */
-  public static async generateQuotationPdf(
-    quotation: QuotationEntity,
-    language: 'mr' | 'en' = 'mr',
-  ): Promise<GeneratePdfResult> {
-    const totalStart = Date.now();
-    const quotationId = quotation.id;
-    const quotationNumber = quotation.quotationNumber || quotation.billNumber || 'Q-001';
+  public static async findExistingPdf(
+    invoiceNumberOrInvoice: string | InvoiceEntity,
+  ): Promise<ExistingPdfResult> {
+    const pdfModule = getPdfModule();
+    if (!pdfModule || typeof pdfModule.findExistingPdf !== 'function') {
+      return { exists: false };
+    }
 
-    console.log('[QUOTATION][PDF][START]', {
-      quotationId,
-      quotationNumber,
-      timestamp: new Date().toISOString(),
-    });
+    try {
+      if (typeof invoiceNumberOrInvoice === 'object' && invoiceNumberOrInvoice) {
+        const invoice = invoiceNumberOrInvoice;
+        // Check if saved pdfUri exists
+        if (invoice.pdfUri) {
+          const fileExists = await QuotationPdfService.checkFileExists(invoice.pdfUri);
+          if (fileExists) {
+            return {
+              exists: true,
+              uri: invoice.pdfUri,
+              filePath: invoice.pdfUri,
+              fileName: invoice.pdfFileName,
+            };
+          }
+        }
+
+        const rawCustomerName =
+          invoice.customerName ||
+          (invoice as any).name ||
+          (invoice as any).firstName ||
+          (invoice as any).customer ||
+          (invoice as any).clientName ||
+          '';
+        const expectedFileName = generateInvoicePdfFileName(
+          rawCustomerName,
+          invoice.date,
+          invoice.invoiceNumber,
+        );
+        const check = await pdfModule.findExistingPdf(expectedFileName);
+        if (check?.exists) return check;
+      } else {
+        const invoiceNumber = invoiceNumberOrInvoice;
+        const cleanInvNumber = invoiceNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const legacyFileName = `Invoice_${cleanInvNumber}.pdf`;
+        const legacyCheck = await pdfModule.findExistingPdf(legacyFileName);
+        if (legacyCheck?.exists) return legacyCheck;
+      }
+      return { exists: false };
+    } catch (_: any) {
+      return { exists: false };
+    }
+  }
+
+  /**
+   * Opens the generated PDF using the device's native PDF viewer.
+   */
+  public static async openPdf(savedPdfUri: string): Promise<boolean> {
+    console.log('[INVOICE][PDF][VIEW]', { uri: savedPdfUri });
+    return QuotationPdfService.openPdf(savedPdfUri);
+  }
+
+  /**
+   * Generates a high-fidelity PDF from the invoice data matching the official document layout.
+   */
+  public static async generateInvoicePdf(
+    invoice: InvoiceEntity,
+    language: 'mr' | 'en' = 'mr',
+    customItems?: any[],
+  ): Promise<GeneratePdfResult> {
+    const invoiceNumber = invoice.invoiceNumber || 'INV-001';
+
+    console.log('[INVOICE][PDF][START]', invoiceNumber);
+    console.log('[INVOICE][PDF][LANGUAGE]', language);
 
     try {
       // 1. Data Preparation Step
-      const dataStart = Date.now();
-      const items = quotation.items || [];
-      const grandTotal = quotation.totalAmount || 0;
+      let items: any[] = customItems || invoice.items || [];
+      let associatedBill: any = invoice.bill || null;
 
-      const vehicleText = [
-        quotation.vehicleNumber || quotation.vehicle,
-        quotation.vehicleType,
-        quotation.vehicleDetails,
-      ]
-        .filter(Boolean)
-        .join(' - ');
+      // If items are not populated, attempt to load from repository
+      if (items.length === 0 && invoice.id) {
+        try {
+          const freshInvoice = await InvoiceRepository.getInvoiceById(invoice.id);
+          if (freshInvoice?.items && freshInvoice.items.length > 0) {
+            items = freshInvoice.items;
+          }
+        } catch {}
+      }
 
-      console.log('[QUOTATION][PDF][DATA]', {
-        quotationId,
-        quotationNumber,
-        customerName: quotation.customerName,
-        customerAddress: quotation.customerAddress,
-        customerPhone: quotation.customerPhone,
-        date: quotation.date,
-        borewellDepth: quotation.borewellDepth,
-        waterBearing: quotation.waterBearing,
-        boreSize: quotation.boreSize,
-        deliveryDays: quotation.deliveryDays,
-        itemsCount: items.length,
-        grandTotal,
-        paymentStatus: quotation.paymentStatus,
-        paidAmount: quotation.paidAmount,
-        remainingAmount: quotation.remainingAmount,
-        vehicleText: vehicleText || 'None',
-      });
+      // If still empty or vehicle details needed, check associated bill
+      const targetQuotationId = invoice.sourceQuotationId || invoice.billId;
+      if (targetQuotationId && (!associatedBill || items.length === 0)) {
+        try {
+          const b = await BillRepository.getBillById(targetQuotationId);
+          if (b) {
+            associatedBill = b;
+            if (items.length === 0 && b.items && b.items.length > 0) {
+              items = b.items;
+            }
+          }
+        } catch {}
+      }
 
-      // 2. Asset Verification & HTML Generation Step
-      console.log('[QUOTATION][PDF][ASSET][STAMP]', {
-        loaded: Boolean(OFFICIAL_STAMP_BASE64),
-        type: 'base64',
-        dataLength: OFFICIAL_STAMP_BASE64?.length || 0,
-        hasStaticPng: Boolean(officialStampPng),
-      });
+      const html = this.buildInvoiceHtml(invoice, language, items, associatedBill);
 
-      console.log('[QUOTATION][PDF][ASSET][SIGNATURE]', {
-        loaded: Boolean(AUTHORIZED_SIGNATURE_BASE64),
-        type: 'base64',
-        dataLength: AUTHORIZED_SIGNATURE_BASE64?.length || 0,
-        hasStaticPng: Boolean(authorizedSignaturePng),
-      });
+      // Generate unique collision-safe filename:
+      // <FirstNameFirst5Letters>_<YYYYMMDD>_<InvoiceNumber>.pdf
+      const fileName = await this.getUniqueInvoicePdfFileName(invoice);
 
-      const htmlStart = Date.now();
-      const html = this.buildQuotationHtml(quotation, language);
+      console.log('[INVOICE][PDF][FILENAME]', fileName);
 
-      // Generate unique collision-safe filename according to spec:
-      // <FirstNameFirst5Letters>_<YYYYMMDD>_<QuotationNumber>.pdf
-      const fileName = await this.getUniqueQuotationPdfFileName(quotation);
-      const htmlElapsed = Date.now() - htmlStart;
-
-      console.log('[QUOTATION][PDF][FILENAME]', fileName);
-
-      console.log('[QUOTATION][PDF][HTML]', {
-        fileName,
-        htmlLength: html.length,
-        elapsedMs: htmlElapsed,
-      });
-
-      // 3. PDF Native Engine Invocation
+      // 2. PDF Native Engine Invocation
       const pdfModule = getPdfModule();
       if (!pdfModule || typeof pdfModule.generatePdfFromHtml !== 'function') {
         const err: any = new Error(
           'Native PDF engine is not available. Please rebuild the Android application (npm run android) to load native modules.',
         );
         err.code = 'MODULE_NOT_FOUND';
-        console.error('[QUOTATION][PDF][ERROR]', {
+        console.error('[INVOICE][PDF][ERROR]', {
+          invoiceNumber,
           message: err.message,
           code: err.code,
-          name: err.name,
         });
         throw err;
       }
-
-      console.log('[QUOTATION][PDF][GENERATE]', {
-        fileName,
-        quotationNumber,
-        htmlLength: html.length,
-      });
 
       // Wrap in 15-second timeout race
       const timeoutMs = 15000;
       let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutHandle = setTimeout(() => {
-          const timeoutErr: any = new Error(`PDF generation timed out after ${timeoutMs / 1000} seconds.`);
+          const timeoutErr: any = new Error(`Invoice PDF generation timed out after ${timeoutMs / 1000} seconds.`);
           timeoutErr.code = 'TIMEOUT';
-          console.error('[QUOTATION][PDF][ERROR]', {
+          console.error('[INVOICE][PDF][ERROR]', {
+            invoiceNumber,
             message: timeoutErr.message,
             code: timeoutErr.code,
-            name: timeoutErr.name,
           });
           reject(timeoutErr);
         }, timeoutMs);
@@ -202,206 +224,109 @@ export class QuotationPdfService {
         if (timeoutHandle) clearTimeout(timeoutHandle);
       }
 
-      console.log('[QUOTATION][PDF][GENERATED_PATH]', {
-        generatedPath: result.generatedPath || result.filePath,
-        pageCount: result.pageCount || 1,
-        contentWidth: result.contentWidth || 794,
-        contentHeight: result.contentHeight || 650,
-      });
-
-      // 4. Downloads Saving Verification & Required Audit Logs
-      const downloadPath = result.filePath || result.uri;
-      console.log('[QUOTATION][PDF][DOWNLOAD_PATH]', downloadPath);
-      console.log('[QUOTATION][PDF][SAVED]', {
+      // 3. Downloads Saving Verification & Required Audit Logs
+      console.log('[INVOICE][PDF][SAVE]', {
         fileName: result.fileName,
         filePath: result.filePath,
         uri: result.uri,
       });
 
-      // 5. Verification Step
+      // 4. Verification Step
       const targetUriOrPath = result.uri || result.filePath;
-      const exists = await this.checkFileExists(targetUriOrPath);
-
-      console.log('[QUOTATION][PDF][VERIFY]', {
-        targetUriOrPath,
-        exists,
-      });
+      const exists = await QuotationPdfService.checkFileExists(targetUriOrPath);
 
       if (!exists) {
-        const err: any = new Error('PDF was generated but could not be verified in Downloads folder.');
+        const err: any = new Error('Invoice PDF was generated but could not be verified in Downloads folder.');
         err.code = 'VERIFY_FAILED';
-        console.error('[QUOTATION][PDF][ERROR]', {
+        console.error('[INVOICE][PDF][ERROR]', {
+          invoiceNumber,
           message: err.message,
           code: err.code,
-          name: err.name,
         });
         throw err;
       }
 
+      console.log('[INVOICE][PDF][SUCCESS]', {
+        invoiceNumber,
+        fileName: result.fileName,
+        uri: result.uri,
+      });
+
       return result;
     } catch (error: any) {
-      console.error('[QUOTATION][PDF][ERROR]', {
+      console.error('[INVOICE][PDF][ERROR]', {
+        invoiceNumber,
         message: error?.message || String(error),
         code: error?.code,
-        name: error?.name || 'Error',
       });
       throw error;
     }
   }
 
   /**
-   * Checks whether a specific PDF filename already exists in the Downloads folder.
+   * Constructs the HTML document for the Invoice styled identically to the official document view.
    */
-  public static async findExistingPdfByName(fileName: string): Promise<ExistingPdfResult> {
-    const pdfModule = getPdfModule();
-    if (!pdfModule || typeof pdfModule.findExistingPdf !== 'function') {
-      return { exists: false };
-    }
-    try {
-      return await pdfModule.findExistingPdf(fileName);
-    } catch (_: any) {
-      return { exists: false };
-    }
-  }
-
-  /**
-   * Checks whether a quotation PDF already exists in the Downloads folder for a given quotation.
-   */
-  public static async findExistingPdf(
-    quotationNumberOrQuotation: string | QuotationEntity,
-  ): Promise<ExistingPdfResult> {
-    const pdfModule = getPdfModule();
-    if (!pdfModule || typeof pdfModule.findExistingPdf !== 'function') {
-      return { exists: false };
-    }
-
-    try {
-      if (typeof quotationNumberOrQuotation === 'object' && quotationNumberOrQuotation) {
-        const quotation = quotationNumberOrQuotation;
-        // Check if saved pdfUri exists
-        if (quotation.pdfUri) {
-          const fileExists = await this.checkFileExists(quotation.pdfUri);
-          if (fileExists) {
-            return {
-              exists: true,
-              uri: quotation.pdfUri,
-              filePath: quotation.pdfUri,
-              fileName: quotation.pdfFileName,
-            };
-          }
-        }
-
-        const rawCustomerName =
-          quotation.customerName ||
-          (quotation as any).name ||
-          (quotation as any).firstName ||
-          (quotation as any).customer ||
-          (quotation as any).clientName ||
-          '';
-        const expectedFileName = generateQuotationPdfFileName(
-          rawCustomerName,
-          quotation.date,
-          quotation.quotationNumber || quotation.billNumber,
-        );
-        const check = await pdfModule.findExistingPdf(expectedFileName);
-        if (check.exists) return check;
-      } else {
-        const quotationNumber = quotationNumberOrQuotation;
-        const cleanQNumber = quotationNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
-        // Check legacy name pattern
-        const legacyFileName = `Quotation_${cleanQNumber}.pdf`;
-        const legacyCheck = await pdfModule.findExistingPdf(legacyFileName);
-        if (legacyCheck.exists) return legacyCheck;
-      }
-      return { exists: false };
-    } catch (_: any) {
-      return { exists: false };
-    }
-  }
-
-  /**
-   * Verifies that the saved PDF file exists in storage.
-   */
-  public static async checkFileExists(uriOrPath: string): Promise<boolean> {
-    const pdfModule = getPdfModule();
-    if (pdfModule?.checkFileExists) {
-      try {
-        return await pdfModule.checkFileExists(uriOrPath);
-      } catch (_: any) {
-        return false;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Opens the generated PDF using the device's native PDF viewer.
-   */
-  public static async openPdf(savedPdfUri: string): Promise<boolean> {
-    console.log('[QUOTATION][PDF][VIEW]', { uri: savedPdfUri });
-
-    const pdfModule = getPdfModule();
-    if (!pdfModule || typeof pdfModule.openPdf !== 'function') {
-      const err: any = new Error('No PDF viewer is available on this device.');
-      err.code = 'NO_VIEWER_MODULE';
-      console.error('[QUOTATION][PDF][ERROR]', {
-        message: err.message,
-        code: err.code,
-        name: err.name,
-      });
-      throw err;
-    }
-
-    try {
-      return await pdfModule.openPdf(savedPdfUri);
-    } catch (error: any) {
-      console.error('[QUOTATION][PDF][ERROR]', {
-        message: error?.message || String(error),
-        code: error?.code,
-        name: error?.name || 'Error',
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Constructs the HTML document styled to match QuotationDocumentView.
-   */
-  private static buildQuotationHtml(quotation: QuotationEntity, language: 'mr' | 'en'): string {
+  public static buildInvoiceHtml(
+    invoice: InvoiceEntity,
+    language: 'mr' | 'en',
+    items?: any[],
+    associatedBill?: any,
+  ): string {
     const isMarathi = language === 'mr';
-    const qNumber = quotation.quotationNumber || quotation.billNumber || 'Q-001';
-    const grandTotal = quotation.totalAmount || 0;
+    const resolvedItems: any[] =
+      items && items.length > 0
+        ? items
+        : invoice.items && invoice.items.length > 0
+          ? invoice.items
+          : associatedBill?.items || [];
+    const invNumber = invoice.invoiceNumber || 'INV-001';
+    const sourceQuoteNumber =
+      invoice.sourceQuotationNumber ||
+      associatedBill?.quotationNumber ||
+      associatedBill?.billNumber ||
+      '';
+    const grandTotal = invoice.grandTotal || 0;
     const { rupees, paise } = CalculationService.splitRupeesAndPaise(grandTotal);
 
     const displayWords =
-      quotation.amountInWordsMarathi ||
-      quotation.amountInWords ||
+      (isMarathi ? invoice.amountInWordsMarathi : invoice.amountInWordsEnglish) ||
+      invoice.amountInWords ||
+      associatedBill?.amountInWordsMarathi ||
+      associatedBill?.amountInWords ||
       (isMarathi ? numberToWordsMarathi(grandTotal) : CalculationService.numberToWordsIndian(grandTotal));
 
-    const items = quotation.items || [];
-    const borewellDepth = quotation.borewellDepth || '0';
-    const waterBearing = quotation.waterBearing || '0';
-    const boreSize = quotation.boreSize || '0';
-    const deliveryDays = quotation.deliveryDays || '7';
+    const borewellDepth =
+      typeof invoice.borewellDepth === 'number' && invoice.borewellDepth > 0
+        ? invoice.borewellDepth
+        : associatedBill?.borewellDepth || '0';
+    const waterBearing =
+      typeof invoice.waterBearing === 'number' && invoice.waterBearing > 0
+        ? invoice.waterBearing
+        : associatedBill?.waterBearing || '0';
+    const boreSize =
+      typeof invoice.boreSize === 'number' && invoice.boreSize > 0
+        ? invoice.boreSize
+        : associatedBill?.boreSize || '0';
+    const deliveryDays = invoice.deliveryDays || associatedBill?.deliveryDays || '7';
 
     const vehicleText = [
-      quotation.vehicleNumber || quotation.vehicle,
-      quotation.vehicleType,
-      quotation.vehicleDetails,
+      (invoice as any).vehicleNumber || (invoice as any).vehicle || associatedBill?.vehicleNumber || associatedBill?.vehicle,
+      (invoice as any).vehicleType || associatedBill?.vehicleType,
+      (invoice as any).vehicleDetails || associatedBill?.vehicleDetails,
     ]
       .filter(Boolean)
       .join(' - ');
 
-    const paymentStatus = quotation.paymentStatus || 'pending';
+    const paymentStatus = invoice.paymentStatus || 'pending';
     const paidAmount =
-      typeof quotation.paidAmount === 'number'
-        ? quotation.paidAmount
+      typeof invoice.paidAmount === 'number'
+        ? invoice.paidAmount
         : paymentStatus === 'paid'
           ? grandTotal
           : 0;
     const remainingAmount =
-      typeof quotation.remainingAmount === 'number'
-        ? quotation.remainingAmount
+      typeof invoice.remainingAmount === 'number'
+        ? invoice.remainingAmount
         : paymentStatus === 'paid'
           ? 0
           : grandTotal;
@@ -414,17 +339,17 @@ export class QuotationPdfService {
           : isMarathi ? 'देणे बाकी' : 'Not Paid';
 
     // Generate table rows
-    const rowsHtml = items
+    const rowsHtml = resolvedItems
       .map((item, index) => {
         let specs: Record<string, any> = {};
         if (typeof item.itemSpecs === 'string') {
           try {
             specs = JSON.parse(item.itemSpecs);
-          } catch { }
+          } catch {}
         } else if (item.itemSpecs && typeof item.itemSpecs === 'object') {
           specs = item.itemSpecs;
-        } else if ((item as any).specs && typeof (item as any).specs === 'object') {
-          specs = (item as any).specs;
+        } else if (item.specs && typeof item.specs === 'object') {
+          specs = item.specs;
         }
 
         const formatted = formatParticularsText(item.srNo, specs, language);
@@ -434,8 +359,8 @@ export class QuotationPdfService {
         const isAlt = index % 2 === 1;
 
         const rowTitle = isMarathi
-          ? item.particularsMr || formatted.title
-          : item.particularsEn || formatted.title;
+          ? item.particularsMr || item.description || formatted.title
+          : item.particularsEn || item.description || formatted.title;
 
         return `
           <tr class="${isAlt ? 'alt-row' : ''}">
@@ -447,10 +372,11 @@ export class QuotationPdfService {
             <td class="col-qty">${hasQty ? item.quantity : '-'}</td>
             <td class="col-rate">${hasRate ? Number(item.rate).toLocaleString('en-IN') : '-'}</td>
             <td class="col-total">
-              ${item.total > 0
-            ? `${lineSplit.rupees.toLocaleString('en-IN')}<span class="paise">.${lineSplit.paise.toString().padStart(2, '0')}</span>`
-            : '-'
-          }
+              ${
+                item.total > 0
+                  ? `${lineSplit.rupees.toLocaleString('en-IN')}<span class="paise">.${lineSplit.paise.toString().padStart(2, '0')}</span>`
+                  : '-'
+              }
             </td>
           </tr>
         `;
@@ -462,7 +388,7 @@ export class QuotationPdfService {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=794, initial-scale=1.0">
-  <title>Quotation ${qNumber}</title>
+  <title>Invoice ${invNumber}</title>
   <style>
     @page {
       size: A4 portrait;
@@ -490,7 +416,7 @@ export class QuotationPdfService {
     .page-container {
       width: 794px;
       max-width: 794px;
-      padding: 10px 18px; /* Left & right margin ensures complete right-side visibility */
+      padding: 10px 18px;
       box-sizing: border-box;
     }
     .document-sheet {
@@ -548,255 +474,291 @@ export class QuotationPdfService {
       padding: 3px 10px;
       border-radius: 4px;
       display: inline-block;
-      margin-bottom: 2px;
     }
     .banner-main-title {
-      font-size: 17px;
+      font-size: 19px;
       font-weight: 900;
+      line-height: 1.15;
       letter-spacing: 0.4px;
+      color: #FFFFFF;
     }
     .banner-sub-title {
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 700;
-      opacity: 0.95;
+      letter-spacing: 0.2px;
+      color: #FFF2DF;
+      margin-top: 1px;
     }
     .address-text {
-      font-size: 9px;
-      color: #4A3E38;
+      font-size: 8.5px;
       font-weight: 700;
-      margin-top: 1px;
+      color: #443830;
+      margin-top: 3px;
+      line-height: 1.2;
     }
     .phone-text {
-      font-size: 9.5px;
-      color: #7A1C1C;
+      font-size: 8.5px;
       font-weight: 800;
-      margin-top: 1px;
+      color: #7A1C1C;
+      margin-top: 1.5px;
+      letter-spacing: 0.3px;
     }
     .metadata-box {
       background-color: #FFFFFF;
       border: 1px solid #D4C6AB;
       border-radius: 4px;
-      padding: 5px 8px;
-      margin-bottom: 5px;
-      box-sizing: border-box;
-      page-break-inside: avoid;
-      break-inside: avoid;
+      padding: 4px 8px;
+      margin-bottom: 4px;
     }
     .meta-top-row {
       display: flex;
+      flex-direction: row;
       justify-content: space-between;
       border-bottom: 1px dashed #E2D7C3;
       padding-bottom: 3px;
       margin-bottom: 3px;
     }
     .quote-no {
-      font-size: 11.5px;
+      font-size: 9.5px;
       font-weight: 800;
       color: #7A1C1C;
     }
     .quote-date {
-      font-size: 10px;
-      font-weight: 700;
-      color: #4A3E38;
-    }
-    .field-row {
-      display: flex;
-      align-items: center;
-      margin-bottom: 2px;
-    }
-    .field-label {
-      width: 75px;
-      font-weight: 700;
-      color: #7A1C1C;
-      font-size: 9.5px;
-      flex-shrink: 0;
-    }
-    .field-val {
-      flex: 1;
-      font-weight: 700;
-      color: #1A1412;
-      border-bottom: 1px dotted #D4C6AB;
-      font-size: 9.5px;
-      padding-bottom: 1px;
-    }
-    .specs-box {
-      display: flex;
-      justify-content: space-between;
-      background-color: #FFFFFF;
-      border: 1px solid #D4C6AB;
-      border-radius: 4px;
-      padding: 4px 8px;
-      margin-bottom: 5px;
-      box-sizing: border-box;
-      page-break-inside: avoid;
-      break-inside: avoid;
-    }
-    .spec-item {
-      font-size: 9.5px;
+      font-size: 9px;
       font-weight: 700;
       color: #332A24;
     }
+    .source-quote-ref {
+      font-size: 8.5px;
+      font-weight: 700;
+      color: #6B5B4D;
+      margin-top: 1px;
+    }
+    .field-row {
+      display: flex;
+      flex-direction: row;
+      align-items: baseline;
+      margin-bottom: 2px;
+    }
+    .field-label {
+      width: 85px;
+      font-size: 8.5px;
+      font-weight: 700;
+      color: #554B42;
+      flex-shrink: 0;
+    }
+    .field-val {
+      font-size: 9px;
+      font-weight: 700;
+      color: #1A1412;
+      flex: 1;
+    }
+    .specs-box {
+      display: flex;
+      flex-direction: row;
+      justify-content: space-between;
+      background-color: #F3EBDD;
+      border: 1px solid #D4C6AB;
+      border-radius: 4px;
+      padding: 3px 8px;
+      margin-bottom: 4px;
+    }
+    .spec-item {
+      font-size: 8.5px;
+      font-weight: 700;
+      color: #443830;
+    }
     .spec-item span {
-      color: #7A1C1C;
       font-weight: 800;
+      color: #7A1C1C;
     }
     .doc-title-row {
       text-align: center;
-      margin: 3px 0;
+      margin: 4px 0 5px 0;
     }
     .doc-title-badge {
       display: inline-block;
-      border: 1.5px solid #7A1C1C;
-      background-color: #FFFFFF;
-      color: #7A1C1C;
+      background-color: #7A1C1C;
+      color: #FFFFFF;
+      font-size: 11px;
       font-weight: 900;
-      font-size: 10.5px;
-      padding: 2px 14px;
-      border-radius: 10px;
-      letter-spacing: 0.5px;
+      padding: 2.5px 18px;
+      border-radius: 3px;
+      letter-spacing: 0.8px;
     }
     table {
       width: 100%;
-      max-width: 100%;
-      table-layout: fixed;
       border-collapse: collapse;
-      margin-bottom: 5px;
+      border: 1px solid #7A1C1C;
       background-color: #FFFFFF;
-      border: 1.5px solid #7A1C1C;
-      box-sizing: border-box;
-      page-break-inside: avoid;
-      break-inside: avoid;
+      margin-bottom: 4px;
+      table-layout: fixed;
     }
-    tr {
-      page-break-inside: avoid;
-      break-inside: avoid;
-    }
-    th {
+    thead {
       background-color: #7A1C1C;
       color: #FFFFFF;
+    }
+    th {
+      font-size: 8.5px;
       font-weight: 800;
-      font-size: 9.5px;
-      padding: 3.5px 4px;
+      color: #FFFFFF;
+      padding: 3.5px 3px;
       text-align: center;
-      border: 1px solid #5A1414;
-      box-sizing: border-box;
+      border: 1px solid #9B2D2D;
+      white-space: nowrap;
     }
     td {
-      padding: 3px 4px;
-      border: 1px solid #E2D7C3;
+      font-size: 8.5px;
+      padding: 2.5px 4px;
+      border: 1px solid #E8DFD1;
       vertical-align: middle;
-      font-size: 9.5px;
-      box-sizing: border-box;
+      color: #221A15;
+    }
+    .col-sr {
+      width: 32px;
+      text-align: center;
+      font-weight: 700;
+    }
+    .col-particulars {
+      width: 480px;
+      text-align: left;
+    }
+    .col-qty {
+      width: 50px;
+      text-align: center;
+      font-weight: 700;
+    }
+    .col-rate {
+      width: 78px;
+      text-align: right;
+      font-weight: 700;
+      padding-right: 6px;
+    }
+    .col-total {
+      width: 90px;
+      text-align: right;
+      font-weight: 800;
+      color: #1A1412;
+      padding-right: 6px;
+    }
+    .part-title {
+      font-weight: 700;
+      color: #1A1412;
+      line-height: 1.25;
+    }
+    .part-subtitle {
+      font-size: 7.5px;
+      color: #6B5B4D;
+      margin-top: 1px;
+      line-height: 1.15;
     }
     .alt-row {
-      background-color: #FAF7F0;
+      background-color: #FDFBF7;
     }
-    .col-sr { width: 5.5%; text-align: center; font-weight: 700; white-space: nowrap; }
-    .col-particulars { width: 49.5%; text-align: left; padding-left: 6px; word-break: break-word; }
-    .col-qty { width: 8%; text-align: center; font-weight: 700; white-space: nowrap; }
-    .col-rate { width: 17%; text-align: right; padding-right: 8px; white-space: nowrap; }
-    .col-total { width: 20%; text-align: right; font-weight: 800; color: #1A1412; padding-right: 10px; white-space: nowrap; }
-    .part-title { font-weight: 700; color: #1A1412; font-size: 9.5px; }
-    .part-subtitle { font-size: 8.5px; color: #7A1C1C; margin-top: 1px; font-weight: 700; }
-    .paise { font-size: 8.5px; color: #554B42; }
+    .paise {
+      font-size: 7px;
+      color: #554B42;
+    }
     .grand-total-row {
-      background-color: #FAF7F0;
-      font-weight: 900;
+      background-color: #F3EBDD;
+      font-weight: 800;
+      border-top: 1.5px solid #7A1C1C;
     }
     .grand-total-label {
       text-align: right;
-      font-size: 11px;
-      font-weight: 900;
+      font-size: 9.5px;
+      font-weight: 800;
       color: #7A1C1C;
-      padding-right: 12px;
-      white-space: nowrap;
-      border-top: 1.5px solid #7A1C1C;
+      padding-right: 8px;
     }
     .grand-total-val {
       text-align: right;
-      font-size: 12px;
+      font-size: 10.5px;
       font-weight: 900;
       color: #7A1C1C;
-      padding-right: 10px;
-      white-space: nowrap;
-      border-top: 1.5px solid #7A1C1C;
+      padding-right: 6px;
     }
     .words-box {
-      width: 100%;
+      background-color: #FFFFFF;
+      border: 1px solid #D4C6AB;
+      border-radius: 4px;
+      padding: 3px 6px;
+      margin-bottom: 3px;
+      font-size: 8.5px;
+      display: flex;
+      flex-direction: row;
+      align-items: baseline;
+    }
+    .words-label {
+      font-weight: 700;
+      color: #554B42;
+      margin-right: 5px;
+      flex-shrink: 0;
+    }
+    .words-val {
+      font-weight: 800;
+      color: #7A1C1C;
+      flex: 1;
+    }
+    .delivery-box {
+      font-size: 8px;
+      font-weight: 700;
+      color: #554B42;
+      margin-bottom: 4px;
+      padding-left: 2px;
+    }
+    .delivery-box span {
+      font-weight: 800;
+      color: #1A1412;
+    }
+    .payment-summary {
+      display: flex;
+      flex-direction: row;
+      background-color: #FFFFFF;
+      border: 1px solid #D4C6AB;
+      border-radius: 4px;
+      padding: 4px;
+      margin-bottom: 5px;
+    }
+    .pay-col {
+      flex: 1;
+      text-align: center;
+      border-right: 1px solid #E8DFD1;
+    }
+    .pay-col:last-child {
+      border-right: none;
+    }
+    .pay-label {
+      font-size: 7.5px;
+      font-weight: 700;
+      color: #6B5B4D;
+      margin-bottom: 1.5px;
+      text-transform: uppercase;
+    }
+    .pay-val {
+      font-size: 9.5px;
+      font-weight: 800;
+    }
+    .pay-status {
+      color: #7A1C1C;
+    }
+    .pay-paid {
+      color: #1E6B37;
+    }
+    .pay-rem {
+      color: #A33A00;
+    }
+    .terms-box {
       background-color: #FFFFFF;
       border: 1px solid #D4C6AB;
       border-radius: 4px;
       padding: 3px 6px;
       margin-bottom: 4px;
-      font-size: 9.5px;
-      box-sizing: border-box;
-      page-break-inside: avoid;
-      break-inside: avoid;
-    }
-    .words-label {
-      font-weight: 800;
-      color: #7A1C1C;
-    }
-    .words-val {
-      font-weight: 700;
-      color: #2F855A;
-      margin-left: 4px;
-    }
-    .delivery-box {
-      font-size: 9px;
-      font-weight: 700;
-      color: #332A24;
-      margin-bottom: 4px;
-    }
-    .delivery-box span {
-      color: #C53030;
-      font-weight: 800;
-    }
-    .payment-summary {
-      width: 100%;
-      display: flex;
-      justify-content: space-between;
-      background-color: #FFFFFF;
-      border: 1px solid #D4C6AB;
-      border-radius: 4px;
-      padding: 4px 8px;
-      margin-bottom: 4px;
-      box-sizing: border-box;
-      page-break-inside: avoid;
-      break-inside: avoid;
-    }
-    .pay-col {
-      text-align: center;
-      flex: 1;
-    }
-    .pay-label {
-      font-size: 8.5px;
-      font-weight: 700;
-      color: #554B42;
-    }
-    .pay-val {
-      font-size: 10px;
-      font-weight: 800;
-      margin-top: 1px;
-    }
-    .pay-status { color: #2F855A; }
-    .pay-paid { color: #2F855A; }
-    .pay-rem { color: #C53030; }
-    .terms-box {
-      width: 100%;
-      border: 1px solid #D4C6AB;
-      background-color: #FFFFFF;
-      border-radius: 4px;
-      padding: 4px 6px;
-      margin-bottom: 4px;
-      box-sizing: border-box;
-      page-break-inside: avoid;
-      break-inside: avoid;
     }
     .terms-header {
+      font-size: 8.5px;
       font-weight: 800;
       color: #7A1C1C;
-      font-size: 9px;
       margin-bottom: 2px;
     }
     .term-item {
@@ -808,6 +770,7 @@ export class QuotationPdfService {
     .signature-section {
       width: 100%;
       display: flex;
+      flex-direction: row;
       justify-content: space-between;
       align-items: flex-end;
       padding-top: 2px;
@@ -890,31 +853,40 @@ export class QuotationPdfService {
 
       <div class="metadata-box">
         <div class="meta-top-row">
-          <div class="quote-no">${isMarathi ? 'कोटेशन नं. :' : 'Quotation No. :'} ${qNumber}</div>
-          <div class="quote-date">${isMarathi ? 'दिनांक :' : 'Date :'} ${quotation.date || '-'}</div>
+          <div>
+            <div class="quote-no">${isMarathi ? 'इनव्हॉइस नं. :' : 'Invoice No. :'} ${invNumber}</div>
+            ${
+              sourceQuoteNumber
+                ? `<div class="source-quote-ref">${isMarathi ? 'संदर्भ कोटेशन :' : 'Source Quotation :'} ${sourceQuoteNumber}</div>`
+                : ''
+            }
+          </div>
+          <div class="quote-date">${isMarathi ? 'दिनांक :' : 'Date :'} ${invoice.date || '-'}</div>
         </div>
         <div class="field-row">
           <div class="field-label">${isMarathi ? 'नांव :' : 'Name :'}</div>
-          <div class="field-val">${quotation.customerName || '-'}</div>
+          <div class="field-val">${invoice.customerName || '-'}</div>
         </div>
         <div class="field-row">
           <div class="field-label">${isMarathi ? 'पत्ता :' : 'Address :'}</div>
-          <div class="field-val">${quotation.customerAddress || '-'}</div>
+          <div class="field-val">${invoice.customerAddress || '-'}</div>
         </div>
-        ${quotation.customerPhone
-        ? `<div class="field-row">
+        ${
+          invoice.customerPhone
+            ? `<div class="field-row">
                 <div class="field-label">${isMarathi ? 'फोन नंबर :' : 'Phone :'}</div>
-                <div class="field-val">${quotation.customerPhone}</div>
+                <div class="field-val">${invoice.customerPhone}</div>
               </div>`
-        : ''
-      }
-        ${vehicleText
-        ? `<div class="field-row">
+            : ''
+        }
+        ${
+          vehicleText
+            ? `<div class="field-row">
                 <div class="field-label">${isMarathi ? 'गाडी / वाहन :' : 'Vehicle :'}</div>
                 <div class="field-val">${vehicleText}</div>
               </div>`
-        : ''
-      }
+            : ''
+        }
       </div>
 
       <div class="specs-box">
@@ -930,7 +902,7 @@ export class QuotationPdfService {
       </div>
 
       <div class="doc-title-row">
-        <div class="doc-title-badge">${isMarathi ? 'कोटेशन (QUOTATION)' : 'QUOTATION'}</div>
+        <div class="doc-title-badge">${isMarathi ? 'टॅक्स इनव्हॉइस (TAX INVOICE)' : 'TAX INVOICE'}</div>
       </div>
 
       <table>
@@ -983,7 +955,7 @@ export class QuotationPdfService {
         <div class="term-item">3. ${isMarathi ? `मालाची डिलिव्हरी ${deliveryDays} दिवसात मिळेल.` : `Goods delivery will be completed in ${deliveryDays} days.`}</div>
         <div class="term-item">4. ${isMarathi ? 'मटेरिअल डिलिव्हरी आधी पेमेंट पूर्ण करणेचे आहे.' : 'Full payment must be completed prior to material delivery.'}</div>
         <div class="term-item">5. ${isMarathi ? 'बोर मध्ये अथवा बोरमध्ये पंप अडकल्यास, अडकलेला पंप काढून देण्याची जबाबदारी कंपनीवर राहणार नाही.' : "If the pump gets stuck in the borewell, removing the stuck pump will not be the company's responsibility."}</div>
-        <div class="term-item">6. ${isMarathi ? 'वरील कोटेशनमध्ये नमूद केलेल्या तपशीलापेक्षा (इस्टिमेटपेक्षा) जादा मटेरिअल लागल्यास पार्टीला ते रोखीने खरेदी करावे लागेल.' : 'If extra materials are required beyond the estimate provided in the quotation, the client must purchase them in cash.'}</div>
+        <div class="term-item">6. ${isMarathi ? 'वरील इनव्हॉइसमध्ये नमूद केलेल्या तपशीलापेक्षा (इस्टिमेटपेक्षा) जादा मटेरिअल लागल्यास पार्टीला ते रोखीने खरेदी करावे लागेल.' : 'If extra materials are required beyond the estimate provided in the invoice, the client must purchase them in cash.'}</div>
       </div>
 
       <div class="signature-section">

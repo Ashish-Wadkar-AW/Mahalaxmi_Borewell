@@ -98,10 +98,9 @@ export const QuotationDetailScreen: React.FC = () => {
 
   // Check if PDF already exists in Downloads for this quotation (handles app restart)
   useEffect(() => {
-    const qNum = quotation?.quotationNumber || quotation?.billNumber;
-    if (!qNum) return;
+    if (!quotation) return;
 
-    QuotationPdfService.findExistingPdf(qNum).then(existing => {
+    QuotationPdfService.findExistingPdf(quotation).then(existing => {
       if (existing && existing.exists && existing.uri) {
         setSavedPdfUri(existing.uri);
         if (existing.fileName) {
@@ -114,7 +113,7 @@ export const QuotationDetailScreen: React.FC = () => {
         });
       }
     });
-  }, [quotation?.quotationNumber, quotation?.billNumber]);
+  }, [quotation?.id, quotation?.quotationNumber, quotation?.billNumber, quotation?.pdfUri]);
 
   const handleStatusChange = async (newStatus: QuotationStatus) => {
     if (!quotation || quotation.status === newStatus) return;
@@ -211,6 +210,21 @@ export const QuotationDetailScreen: React.FC = () => {
       const finalTargetUri = result.uri || result.filePath;
       setSavedPdfUri(finalTargetUri);
       setSavedPdfFileName(result.fileName);
+
+      // Persist exact saved URI to SQLite quotation record so View PDF survives app restarts
+      try {
+        await QuotationRepository.updateQuotationPdfInfo(
+          quotation.id,
+          finalTargetUri,
+          result.fileName,
+        );
+        setQuotation(prev =>
+          prev ? { ...prev, pdfUri: finalTargetUri, pdfFileName: result.fileName } : prev,
+        );
+      } catch (saveUriErr) {
+        console.warn('Could not save PDF URI to quotation record:', saveUriErr);
+      }
+
       dispatch(
         showFeedback({
           type: 'success',

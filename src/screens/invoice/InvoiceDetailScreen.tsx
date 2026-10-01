@@ -18,9 +18,11 @@ import { showFeedback } from '../../redux/slices/feedbackSlice';
 import { InvoiceEntity, BillEntity } from '../../types/database';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { BillRepository } from '../../database/repositories/BillRepository';
+import { Button } from '../../components/common/Button';
 import { InvoiceRepository } from '../../database/repositories/InvoiceRepository';
 import { QuotationDocumentView } from '../../components/quotation/QuotationDocumentView';
 import { updateInvoicePaymentStatusThunk } from '../../redux/slices/invoiceSlice';
+import { InvoicePdfService } from '../../services/InvoicePdfService';
 
 export const InvoiceDetailScreen: React.FC = () => {
   const route = useRoute<any>();
@@ -39,6 +41,29 @@ export const InvoiceDetailScreen: React.FC = () => {
   );
   const language = useAppSelector(state => state.language.currentLanguage);
   const isMarathi = language === 'mr';
+
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [savedPdfUri, setSavedPdfUri] = useState<string | null>(null);
+  const [savedPdfFileName, setSavedPdfFileName] = useState<string>('');
+
+  // Check if PDF already exists in Downloads for this invoice (handles app restart)
+  useEffect(() => {
+    if (!invoice) return;
+
+    InvoicePdfService.findExistingPdf(invoice).then(existing => {
+      if (existing && existing.exists && existing.uri) {
+        setSavedPdfUri(existing.uri);
+        if (existing.fileName) {
+          setSavedPdfFileName(existing.fileName);
+        }
+        console.log('[INVOICE][PDF][SAVED]', {
+          source: 'EXISTING_DOWNLOADS',
+          uri: existing.uri,
+          fileName: existing.fileName,
+        });
+      }
+    });
+  }, [invoice?.id, invoice?.invoiceNumber, invoice?.pdfUri]);
 
   useEffect(() => {
     InvoiceRepository.getInvoiceById(invoice.id).then(fresh => {
@@ -202,6 +227,99 @@ export const InvoiceDetailScreen: React.FC = () => {
               screen: 'CustomerInformation',
             });
           },
+        }),
+      );
+    }
+  };
+
+  const handleGeneratePdf = async () => {
+    if (!invoice || isGeneratingPdf) return;
+    const invNum = invoice.invoiceNumber || 'INV-001';
+
+    console.log('[INVOICE][PDF][CLICK]', {
+      invoiceId: invoice.id,
+      invoiceNumber: invNum,
+    });
+
+    setIsGeneratingPdf(true);
+    try {
+      const result = await InvoicePdfService.generateInvoicePdf(
+        invoice,
+        isMarathi ? 'mr' : 'en',
+      );
+      const finalTargetUri = result.uri || result.filePath;
+      setSavedPdfUri(finalTargetUri);
+      setSavedPdfFileName(result.fileName);
+
+      // Persist exact saved URI to SQLite invoice record so View PDF survives app restarts
+      try {
+        await InvoiceRepository.updateInvoicePdfInfo(
+          invoice.id,
+          finalTargetUri,
+          result.fileName,
+        );
+        setInvoice(prev =>
+          prev ? { ...prev, pdfUri: finalTargetUri, pdfFileName: result.fileName } : prev,
+        );
+      } catch (saveUriErr) {
+        console.warn('Could not save PDF URI to invoice record:', saveUriErr);
+      }
+
+      dispatch(
+        showFeedback({
+          type: 'success',
+          title: isMarathi ? 'PDF जतन झाली' : 'PDF Saved Successfully',
+          message: isMarathi
+            ? `इनव्हॉइस PDF यशस्वीरित्या Downloads फोल्डरमध्ये जतन झाली:\n${result.fileName}`
+            : `Invoice PDF saved successfully in Downloads folder:\n${result.fileName}`,
+          confirmText: isMarathi ? 'PDF पहा' : 'View PDF',
+          cancelText: isMarathi ? 'ठीक आहे' : 'OK',
+          onConfirm: () => {
+            handleViewPdf(finalTargetUri);
+          },
+        }),
+      );
+    } catch (e: any) {
+      console.error('[INVOICE][PDF][ERROR]', {
+        invoiceId: invoice.id,
+        error: e?.message || String(e),
+      });
+      dispatch(
+        showFeedback({
+          type: 'error',
+          title: isMarathi ? 'त्रुटी' : 'Error',
+          message:
+            e?.message ||
+            (isMarathi
+              ? 'इनव्हॉइस PDF तयार करता आली नाही. कृपया पुन्हा प्रयत्न करा.'
+              : 'Failed to generate Invoice PDF. Please try again.'),
+        }),
+      );
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  const handleViewPdf = async (customUri?: string) => {
+    const target = customUri || savedPdfUri;
+    if (!target) return;
+    console.log('[INVOICE][PDF][VIEW]', { uri: target });
+    try {
+      await InvoicePdfService.openPdf(target);
+    } catch (e: any) {
+      console.error('[INVOICE][PDF][ERROR]', {
+        step: 'HANDLE_VIEW_PDF',
+        error: e?.message || String(e),
+      });
+      dispatch(
+        showFeedback({
+          type: 'warning',
+          title: isMarathi ? 'दर्शविणे शक्य नाही' : 'Viewer Unavailable',
+          message:
+            e?.message ||
+            (isMarathi
+              ? 'या डिव्हाइसवर कोणताही PDF व्ह्यूअर उपलब्ध नाही.'
+              : 'No PDF viewer is available on this device.'),
         }),
       );
     }
@@ -392,6 +510,71 @@ export const InvoiceDetailScreen: React.FC = () => {
           </View>
         </View>
 
+        {/* PDF Export & View Action Card */}
+        <View style={styles.pdfCard}>
+          <View style={styles.pdfHeaderRow}>
+            <View style={styles.pdfTitleRow}>
+              <Icon name="fileText" size={17} color={colors.primary} />
+              <Text style={styles.pdfCardTitle}>
+                {isMarathi ? 'इनव्हॉइस PDF दस्तऐवज' : 'Invoice PDF Document'}
+              </Text>
+            </View>
+            {savedPdfUri ? (
+              <Badge
+                label={isMarathi ? 'जतन झाले' : 'Saved'}
+                variant="success"
+                size="sm"
+              />
+            ) : null}
+          </View>
+
+          {savedPdfUri ? (
+            <View style={styles.pdfSuccessBox}>
+              <Text style={styles.pdfSuccessTitle}>
+                ✓ {isMarathi ? 'PDF यशस्वीरित्या जतन झाली' : 'PDF saved successfully'}
+              </Text>
+              <Text style={styles.pdfSuccessSub} numberOfLines={1}>
+                {isMarathi ? 'Downloads फोल्डरमध्ये जतन:' : 'Saved in Downloads:'} {savedPdfFileName}
+              </Text>
+              <View style={styles.pdfBtnRow}>
+                <Button
+                  title={isMarathi ? 'PDF पहा' : 'View PDF'}
+                  onPress={() => handleViewPdf(savedPdfUri)}
+                  size="sm"
+                  variant="primary"
+                  icon="eye"
+                  style={styles.viewPdfBtn}
+                />
+                <Button
+                  title={
+                    isGeneratingPdf
+                      ? isMarathi ? 'तयार होत आहे...' : 'Generating...'
+                      : isMarathi ? 'पुन्हा तयार करा' : 'Convert to PDF'
+                  }
+                  onPress={handleGeneratePdf}
+                  size="sm"
+                  variant="secondary"
+                  disabled={isGeneratingPdf}
+                />
+              </View>
+            </View>
+          ) : (
+            <Button
+              title={
+                isGeneratingPdf
+                  ? isMarathi ? 'PDF तयार होत आहे...' : 'Generating PDF...'
+                  : isMarathi ? 'PDF मध्ये रूपांतरित करा' : 'Convert to PDF'
+              }
+              onPress={handleGeneratePdf}
+              size="md"
+              variant="primary"
+              icon={isGeneratingPdf ? undefined : 'download'}
+              disabled={isGeneratingPdf}
+              style={styles.generatePdfBtn}
+            />
+          )}
+        </View>
+
         {/* Official Tax Invoice Document View */}
         <QuotationDocumentView
           billNumber={invoice.invoiceNumber}
@@ -419,6 +602,9 @@ export const InvoiceDetailScreen: React.FC = () => {
               ? invoice.boreSize
               : associatedBill?.boreSize || 0
           }
+          vehicleNumber={(invoice as any)?.vehicleNumber || associatedBill?.vehicleNumber || (associatedBill as any)?.vehicle}
+          vehicleType={(invoice as any)?.vehicleType || associatedBill?.vehicleType}
+          vehicleDetails={(invoice as any)?.vehicleDetails || associatedBill?.vehicleDetails}
           items={quotationItems}
           grandTotal={invoice.grandTotal}
           amountInWords={
@@ -598,5 +784,61 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '700',
+  },
+  pdfCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.xs,
+    borderWidth: 1,
+    borderColor: '#E2D7C3',
+    ...shadows.sm,
+  },
+  pdfHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  pdfTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pdfCardTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  pdfSuccessBox: {
+    backgroundColor: '#EDFDF5',
+    borderRadius: borderRadius.sm,
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  pdfSuccessTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#065F46',
+  },
+  pdfSuccessSub: {
+    fontSize: 11,
+    color: '#047857',
+    marginTop: 2,
+    marginBottom: spacing.xs,
+    fontWeight: '600',
+  },
+  pdfBtnRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  viewPdfBtn: {
+    flex: 1,
+  },
+  generatePdfBtn: {
+    width: '100%',
   },
 });

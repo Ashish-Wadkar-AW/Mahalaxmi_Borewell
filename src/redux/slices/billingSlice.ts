@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import {
   BillEntity,
   BillItemEntity,
+  CustomerEntity,
   InvoiceEntity,
   QuotationEntity,
   QuotationItemEntity,
@@ -9,6 +10,7 @@ import {
 } from '../../types/database';
 import { BillRepository } from '../../database/repositories/BillRepository';
 import { QuotationRepository } from '../../database/repositories/QuotationRepository';
+import { CustomerRepository } from '../../database/repositories/CustomerRepository';
 import { CalculationService } from '../../services/CalculationService';
 import { formatParticularsText, numberToWordsMarathi } from '../../utils/quotationFormatters';
 import {
@@ -128,6 +130,7 @@ interface BillingState {
   language: BillingLanguage;
   billNumber: string;
   editingQuotationId: string | null;
+  customerId: string;
   customerName: string;
   customerPhone: string;
   customerAddress: string;
@@ -155,6 +158,7 @@ const initialState: BillingState = {
   language: 'mr',
   billNumber: 'Q-001',
   editingQuotationId: null,
+  customerId: '',
   customerName: '',
   customerPhone: '',
   customerAddress: '',
@@ -268,11 +272,24 @@ export const saveQuotationThunk = createAsyncThunk<
       } catch {}
     }
 
+    // Resolve or create Customer record
+    let customer: CustomerEntity;
+    try {
+      customer = await CustomerRepository.findOrCreateCustomer(
+        state.customerName.trim(),
+        state.customerPhone.trim(),
+        state.customerAddress.trim(),
+      );
+    } catch (custErr: any) {
+      console.error('[BILLING][CUSTOMER][CREATE_ERROR]', custErr);
+      return rejectWithValue(custErr.message || 'Failed to resolve customer record.');
+    }
+
     const quotationEntity: QuotationEntity = {
       id: billId,
       billNumber: qNumber,
       quotationNumber: qNumber,
-      customerId: '',
+      customerId: customer.id,
       customerName: state.customerName.trim(),
       customerPhone: state.customerPhone.trim(),
       customerAddress: state.customerAddress.trim(),
@@ -312,6 +329,18 @@ export const saveQuotationThunk = createAsyncThunk<
     });
 
     try {
+      console.log('[BILLING][QUOTATION][CREATE]', {
+        quotationNumber: qNumber,
+        customerId: customer.id,
+        totalAmount: calculatedTotal,
+      });
+      console.log('[BILLING][QUOTATION][PAYLOAD]', {
+        id: quotationEntity.id,
+        customerId: quotationEntity.customerId,
+        customerName: quotationEntity.customerName,
+        customerPhone: quotationEntity.customerPhone,
+        customerAddress: quotationEntity.customerAddress,
+      });
       const savedQuotation = await QuotationRepository.saveQuotation(
         quotationEntity,
         itemEntities,
@@ -401,10 +430,23 @@ export const saveBillThunk = createAsyncThunk<
       remainingAmount: remainingNum,
     });
 
+    // Resolve or create Customer record
+    let customer: CustomerEntity;
+    try {
+      customer = await CustomerRepository.findOrCreateCustomer(
+        state.customerName.trim(),
+        state.customerPhone.trim(),
+        state.customerAddress.trim(),
+      );
+    } catch (custErr: any) {
+      console.error('[BILLING][CUSTOMER][CREATE_ERROR]', custErr);
+      return rejectWithValue(custErr.message || 'Failed to resolve customer record.');
+    }
+
     const billEntity: BillEntity = {
       id: billId,
       billNumber: state.billNumber,
-      customerId: '',
+      customerId: customer.id,
       customerName: state.customerName.trim(),
       customerPhone: state.customerPhone.trim(),
       customerAddress: state.customerAddress.trim(),
@@ -472,6 +514,9 @@ export const billingSlice = createSlice({
             ? numberToWordsMarathi(state.grandTotal)
             : CalculationService.numberToWordsIndian(state.grandTotal);
       }
+    },
+    setCustomerId: (state, action: PayloadAction<string>) => {
+      state.customerId = action.payload;
     },
     setCustomerName: (state, action: PayloadAction<string>) => {
       state.customerName = action.payload;
@@ -625,6 +670,7 @@ export const billingSlice = createSlice({
       const bill = action.payload;
       state.editingQuotationId = bill.id;
       state.billNumber = bill.quotationNumber || bill.billNumber;
+      state.customerId = bill.customerId || '';
       state.customerName = bill.customerName;
       state.customerPhone = bill.customerPhone || '';
       state.customerAddress = bill.customerAddress;
@@ -676,10 +722,14 @@ export const billingSlice = createSlice({
       }
     },
     resetBillingForm: state => {
+      console.log('[BILLING][STATE][RESET]');
+      console.log('[BILLING][NEW][RESET]');
       state.editingQuotationId = null;
+      state.customerId = '';
       state.customerName = '';
       state.customerPhone = '';
       state.customerAddress = '';
+      state.date = new Date().toISOString().split('T')[0];
       state.borewellDepth = '';
       state.waterBearing = '';
       state.boreSize = '';
@@ -761,6 +811,7 @@ export const billingSlice = createSlice({
 
 export const {
   setLanguage,
+  setCustomerId,
   setCustomerName,
   setCustomerPhone,
   setCustomerAddress,
@@ -778,5 +829,7 @@ export const {
   loadBillForEditing,
   resetBillingForm,
 } = billingSlice.actions;
+
+export const resetBillingState = resetBillingForm;
 
 export default billingSlice.reducer;

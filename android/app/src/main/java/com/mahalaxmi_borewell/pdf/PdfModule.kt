@@ -1,7 +1,10 @@
 package com.mahalaxmi_borewell.pdf
 
+import android.content.ClipData
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.pdf.PdfDocument
 import android.media.MediaScannerConnection
 import android.net.Uri
@@ -52,8 +55,8 @@ class PdfModule(private val reactContext: ReactApplicationContext) :
             mainHandler.postDelayed(timeoutRunnable, 15000)
 
             try {
-                // Sanitize file name: remove invalid characters
-                val cleanName = rawFileName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                // Sanitize file name: remove invalid characters (keep Unicode letters, digits, ., _, -)
+                val cleanName = rawFileName.replace(Regex("[^\\p{L}0-9._-]"), "_")
                 val safeFileName = if (cleanName.endsWith(".pdf", ignoreCase = true)) {
                     cleanName
                 } else {
@@ -101,6 +104,8 @@ class PdfModule(private val reactContext: ReactApplicationContext) :
                     }
 
                     override fun onPageFinished(view: WebView?, url: String?) {
+                        if (url == "about:blank") return
+
                         // Allow layout and image decoding to settle
                         mainHandler.postDelayed({
                             if (isCompleted.get()) return@postDelayed
@@ -114,74 +119,13 @@ class PdfModule(private val reactContext: ReactApplicationContext) :
                                     return@postDelayed
                                 }
 
-                                val jsQuery = """
-                                    (function() {
-                                        try {
-                                            var sheet = document.querySelector('.document-sheet');
-                                            var table = document.querySelector('table');
-                                            var body = document.body;
-                                            var html = document.documentElement;
-                                            var h = Math.max(
-                                                sheet ? Math.ceil(sheet.getBoundingClientRect().height || sheet.scrollHeight || sheet.offsetHeight) : 0,
-                                                body ? Math.ceil(body.scrollHeight || body.offsetHeight) : 0,
-                                                html ? Math.ceil(html.scrollHeight || html.offsetHeight) : 0
-                                            );
-                                            var w = Math.max(
-                                                sheet ? Math.ceil(sheet.getBoundingClientRect().width || sheet.scrollWidth || sheet.offsetWidth) : 0,
-                                                body ? Math.ceil(body.scrollWidth || body.offsetWidth) : 0,
-                                                html ? Math.ceil(html.scrollWidth || html.offsetWidth) : 0
-                                            );
-                                            var tw = table ? Math.ceil(table.getBoundingClientRect().width || table.offsetWidth) : 0;
-                                            return JSON.stringify({
-                                                contentHeight: h,
-                                                contentWidth: w,
-                                                tableWidth: tw
-                                            });
-                                        } catch(e) {
-                                            return JSON.stringify({ error: e.message });
-                                        }
-                                    })()
-                                """.trimIndent()
-
-                                view.evaluateJavascript(jsQuery) { rawResult ->
-                                    if (isCompleted.get()) return@evaluateJavascript
-
+                                val renderPdfDocument = { measuredH: Int, measuredW: Int, tableW: Int ->
                                     try {
-                                        var measuredHeight = 0
-                                        var measuredWidth = a4BaseWidth
-                                        var measuredTableWidth = 0
+                                        val cssContentHeight = Math.max(1, measuredH)
+                                        val contentWidth = if (measuredW > 0) measuredW else a4BaseWidth
+                                        val tableWidth = if (tableW > 0) tableW else 730
 
-                                        if (!rawResult.isNullOrEmpty() && rawResult != "null") {
-                                            try {
-                                                var cleanJson = rawResult
-                                                if (cleanJson.startsWith("\"") && cleanJson.endsWith("\"")) {
-                                                    cleanJson = org.json.JSONTokener(cleanJson).nextValue().toString()
-                                                }
-                                                val jsonObj = org.json.JSONObject(cleanJson)
-                                                measuredHeight = jsonObj.optInt("contentHeight", 0)
-                                                measuredWidth = jsonObj.optInt("contentWidth", a4BaseWidth)
-                                                measuredTableWidth = jsonObj.optInt("tableWidth", 0)
-                                            } catch (_: Exception) {}
-                                        }
-
-                                        // Fallback if JS returned 0
-                                        if (measuredHeight <= 0) {
-                                            val rawContentHeight = view.contentHeight
-                                            measuredHeight = if (rawContentHeight > a4BaseHeight * 1.5) {
-                                                (rawContentHeight / printScale).toInt()
-                                            } else {
-                                                rawContentHeight
-                                            }
-                                        }
-
-                                        val cssContentHeight = Math.max(1, measuredHeight)
-                                        val contentWidth = if (measuredWidth > 0) measuredWidth else a4BaseWidth
-                                        val tableWidth = if (measuredTableWidth > 0) measuredTableWidth else 730
-
-                                        // GUARANTEE STRICT SINGLE PAGE FOR QUOTATION:
-                                        // Standard A4 height is 1123 CSS px.
-                                        // For standard quotation (which fits comfortably in ~600-800 CSS px),
-                                        // totalPages is strictly 1. Pages 2, 3, 4 will never exist.
+                                        // Strict single page for quotation if within A4 base height
                                         val totalPages = if (cssContentHeight <= a4BaseHeight) {
                                             1
                                         } else {
@@ -239,6 +183,93 @@ class PdfModule(private val reactContext: ReactApplicationContext) :
                                         }
                                     }
                                 }
+
+                                val jsQuery = """
+                                    (function() {
+                                        try {
+                                            var sheet = document.querySelector('.document-sheet');
+                                            var table = document.querySelector('table');
+                                            var body = document.body;
+                                            var html = document.documentElement;
+                                            var h = Math.max(
+                                                sheet ? Math.ceil(sheet.getBoundingClientRect().height || sheet.scrollHeight || sheet.offsetHeight) : 0,
+                                                body ? Math.ceil(body.scrollHeight || body.offsetHeight) : 0,
+                                                html ? Math.ceil(html.scrollHeight || html.offsetHeight) : 0
+                                            );
+                                            var w = Math.max(
+                                                sheet ? Math.ceil(sheet.getBoundingClientRect().width || sheet.scrollWidth || sheet.offsetWidth) : 0,
+                                                body ? Math.ceil(body.scrollWidth || body.offsetWidth) : 0,
+                                                html ? Math.ceil(html.scrollWidth || html.offsetWidth) : 0
+                                            );
+                                            var tw = table ? Math.ceil(table.getBoundingClientRect().width || table.offsetWidth) : 0;
+                                            return JSON.stringify({
+                                                contentHeight: h,
+                                                contentWidth: w,
+                                                tableWidth: tw
+                                            });
+                                        } catch(e) {
+                                            return JSON.stringify({ error: e.message });
+                                        }
+                                    })()
+                                """.trimIndent()
+
+                                val jsExecuted = AtomicBoolean(false)
+
+                                // Fallback runnable in case evaluateJavascript callback is delayed on off-screen WebView
+                                val fallbackRunnable = Runnable {
+                                    if (jsExecuted.compareAndSet(false, true)) {
+                                        val rawH = view.contentHeight
+                                        val fallbackH = if (rawH > 0) {
+                                            if (rawH > a4BaseHeight * 1.5) (rawH / printScale).toInt() else rawH
+                                        } else {
+                                            a4BaseHeight
+                                        }
+                                        renderPdfDocument(fallbackH, a4BaseWidth, 730)
+                                    }
+                                }
+                                mainHandler.postDelayed(fallbackRunnable, 1200)
+
+                                view.evaluateJavascript(jsQuery) { rawResult ->
+                                    if (!jsExecuted.compareAndSet(false, true)) return@evaluateJavascript
+                                    mainHandler.removeCallbacks(fallbackRunnable)
+                                    if (isCompleted.get()) return@evaluateJavascript
+
+                                    try {
+                                        var measuredHeight = 0
+                                        var measuredWidth = a4BaseWidth
+                                        var measuredTableWidth = 0
+
+                                        if (!rawResult.isNullOrEmpty() && rawResult != "null") {
+                                            try {
+                                                var cleanJson = rawResult
+                                                if (cleanJson.startsWith("\"") && cleanJson.endsWith("\"")) {
+                                                    cleanJson = org.json.JSONTokener(cleanJson).nextValue().toString()
+                                                }
+                                                val jsonObj = org.json.JSONObject(cleanJson)
+                                                measuredHeight = jsonObj.optInt("contentHeight", 0)
+                                                measuredWidth = jsonObj.optInt("contentWidth", a4BaseWidth)
+                                                measuredTableWidth = jsonObj.optInt("tableWidth", 0)
+                                            } catch (_: Exception) {}
+                                        }
+
+                                        // Fallback if JS returned 0
+                                        if (measuredHeight <= 0) {
+                                            val rawContentHeight = view.contentHeight
+                                            measuredHeight = if (rawContentHeight > a4BaseHeight * 1.5) {
+                                                (rawContentHeight / printScale).toInt()
+                                            } else {
+                                                rawContentHeight
+                                            }
+                                        }
+
+                                        renderPdfDocument(measuredHeight, measuredWidth, measuredTableWidth)
+                                    } catch (e: Exception) {
+                                        mainHandler.removeCallbacks(timeoutRunnable)
+                                        if (isCompleted.compareAndSet(false, true)) {
+                                            promise.reject("PDF_GEN_ERROR", "Error generating or saving PDF: ${e.message}", e)
+                                        }
+                                    }
+                                }
                             } catch (e: Exception) {
                                 mainHandler.removeCallbacks(timeoutRunnable)
                                 if (isCompleted.compareAndSet(false, true)) {
@@ -279,70 +310,116 @@ class PdfModule(private val reactContext: ReactApplicationContext) :
             var finalSavedName = safeFileName
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val resolver = reactContext.contentResolver
-
-                // Remove any stale entry with the same name created earlier by this app
                 try {
-                    resolver.delete(
-                        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                        "${MediaStore.MediaColumns.DISPLAY_NAME} = ?",
-                        arrayOf(safeFileName)
-                    )
-                } catch (_: Exception) {}
+                    val resolver = reactContext.contentResolver
 
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, safeFileName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
-                }
-
-                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-                    ?: throw IOException("Failed to create MediaStore entry in Downloads folder")
-
-                resolver.openOutputStream(uri).use { outStream ->
-                    if (outStream == null) throw IOException("Failed to open output stream for MediaStore URI: $uri")
-                    FileInputStream(tempCacheFile).use { inStream ->
-                        inStream.copyTo(outStream)
-                    }
-                }
-
-                contentValues.clear()
-                contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                resolver.update(uri, contentValues, null, null)
-
-                finalSavedUri = uri.toString()
-
-                // Resolve actual file name & path from MediaStore
-                try {
-                    val cursor = resolver.query(
-                        uri,
-                        arrayOf(MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.DATA),
-                        null,
-                        null,
-                        null
-                    )
-                    cursor?.use {
-                        if (it.moveToFirst()) {
-                            val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                            val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
-                            if (nameIdx != -1) {
-                                val n = it.getString(nameIdx)
-                                if (!n.isNullOrEmpty()) finalSavedName = n
-                            }
-                            if (dataIdx != -1) {
-                                val p = it.getString(dataIdx)
-                                if (!p.isNullOrEmpty()) finalSavedPath = p
+                    // Safe delete stale entry by Content URI and ID if created earlier
+                    try {
+                        val cursor = resolver.query(
+                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            arrayOf(MediaStore.MediaColumns._ID),
+                            "${MediaStore.MediaColumns.DISPLAY_NAME} = ?",
+                            arrayOf(safeFileName),
+                            null
+                        )
+                        cursor?.use {
+                            while (it.moveToNext()) {
+                                val idIdx = it.getColumnIndex(MediaStore.MediaColumns._ID)
+                                if (idIdx != -1) {
+                                    val existingId = it.getLong(idIdx)
+                                    val itemUri = ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, existingId)
+                                    try {
+                                        resolver.delete(itemUri, null, null)
+                                    } catch (_: Exception) {}
+                                }
                             }
                         }
-                    }
-                } catch (_: Exception) {}
+                    } catch (_: Exception) {}
 
-                if (finalSavedPath.isEmpty()) {
-                    finalSavedPath = File(
-                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                        finalSavedName
-                    ).absolutePath
+                    val contentValues = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, safeFileName)
+                        put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    }
+
+                    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                        ?: throw IOException("Failed to create MediaStore entry in Downloads folder")
+
+                    resolver.openOutputStream(uri).use { outStream ->
+                        if (outStream == null) throw IOException("Failed to open output stream for MediaStore URI: $uri")
+                        FileInputStream(tempCacheFile).use { inStream ->
+                            inStream.copyTo(outStream)
+                        }
+                    }
+
+                    contentValues.clear()
+                    contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    resolver.update(uri, contentValues, null, null)
+
+                    finalSavedUri = uri.toString()
+
+                    // Resolve actual file name & path from MediaStore
+                    try {
+                        val cursor = resolver.query(
+                            uri,
+                            arrayOf(MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.DATA),
+                            null,
+                            null,
+                            null
+                        )
+                        cursor?.use {
+                            if (it.moveToFirst()) {
+                                val nameIdx = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                                val dataIdx = it.getColumnIndex(MediaStore.MediaColumns.DATA)
+                                if (nameIdx != -1) {
+                                    val n = it.getString(nameIdx)
+                                    if (!n.isNullOrEmpty()) finalSavedName = n
+                                }
+                                if (dataIdx != -1) {
+                                    val p = it.getString(dataIdx)
+                                    if (!p.isNullOrEmpty()) finalSavedPath = p
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
+
+                    if (finalSavedPath.isEmpty()) {
+                        finalSavedPath = File(
+                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                            finalSavedName
+                        ).absolutePath
+                    }
+                } catch (mediaStoreEx: Exception) {
+                    // Fallback to direct file write + FileProvider on Android 10+ if MediaStore fails
+                    val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                    val destFile = if (downloadsDir.exists() || downloadsDir.mkdirs()) {
+                        File(downloadsDir, safeFileName)
+                    } else {
+                        File(reactContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: reactContext.filesDir, safeFileName)
+                    }
+
+                    if (destFile.exists()) {
+                        destFile.delete()
+                    }
+
+                    FileInputStream(tempCacheFile).use { inStream ->
+                        FileOutputStream(destFile).use { outStream ->
+                            inStream.copyTo(outStream)
+                        }
+                    }
+
+                    finalSavedPath = destFile.absolutePath
+                    finalSavedName = destFile.name
+                    finalSavedUri = try {
+                        FileProvider.getUriForFile(
+                            reactContext,
+                            "${reactContext.packageName}.fileprovider",
+                            destFile
+                        ).toString()
+                    } catch (_: Exception) {
+                        Uri.fromFile(destFile).toString()
+                    }
                 }
             } else {
                 // Android 9 and lower: direct file copy to Downloads folder
@@ -417,12 +494,14 @@ class PdfModule(private val reactContext: ReactApplicationContext) :
                 val exists = reactContext.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
                     pfd.statSize > 0
                 } ?: false
-                promise.resolve(exists)
-            } else {
-                val path = if (uriOrPath.startsWith("file://")) uriOrPath.substring(7) else uriOrPath
-                val file = File(path)
-                promise.resolve(file.exists() && file.length() > 0)
+                if (exists) {
+                    promise.resolve(true)
+                    return
+                }
             }
+            val path = if (uriOrPath.startsWith("file://")) uriOrPath.substring(7) else uriOrPath
+            val file = File(path)
+            promise.resolve(file.exists() && file.length() > 0)
         } catch (_: Exception) {
             // Check fallback physical file if content uri check failed
             try {
@@ -438,7 +517,7 @@ class PdfModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun findExistingPdf(rawFileName: String, promise: Promise) {
         try {
-            val cleanName = rawFileName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            val cleanName = rawFileName.replace(Regex("[^\\p{L}0-9._-]"), "_")
             val safeFileName = if (cleanName.endsWith(".pdf", ignoreCase = true)) cleanName else "$cleanName.pdf"
 
             // 1. Check physical file in Downloads directory
@@ -552,11 +631,13 @@ class PdfModule(private val reactContext: ReactApplicationContext) :
                     setDataAndType(uri, "application/pdf")
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    clipData = ClipData.newRawUri("PDF", uri)
                 }
 
                 // Grant read permission to all apps that can handle viewing PDFs
                 val packageManager = reactContext.packageManager
-                val activities = packageManager.queryIntentActivities(intent, 0)
+                val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PackageManager.MATCH_ALL else 0
+                val activities = packageManager.queryIntentActivities(intent, flags)
                 for (info in activities) {
                     val pkg = info.activityInfo.packageName
                     try {
@@ -565,7 +646,9 @@ class PdfModule(private val reactContext: ReactApplicationContext) :
                 }
 
                 val chooser = Intent.createChooser(intent, "Open Quotation PDF").apply {
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    clipData = ClipData.newRawUri("PDF", uri)
                 }
 
                 try {
@@ -577,7 +660,17 @@ class PdfModule(private val reactContext: ReactApplicationContext) :
                     }
                     promise.resolve(true)
                 } catch (activityNotFound: Exception) {
-                    promise.reject("NO_PDF_VIEWER", "No PDF viewer is available on this device.")
+                    try {
+                        val activity = reactContext.currentActivity
+                        if (activity != null) {
+                            activity.startActivity(intent)
+                        } else {
+                            reactContext.startActivity(intent)
+                        }
+                        promise.resolve(true)
+                    } catch (_: Exception) {
+                        promise.reject("NO_PDF_VIEWER", "No PDF viewer is available on this device.")
+                    }
                 }
             } catch (e: Exception) {
                 promise.reject("OPEN_FAILED", "Failed to open PDF: ${e.message}", e)

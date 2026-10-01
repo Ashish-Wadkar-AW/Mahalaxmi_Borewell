@@ -314,3 +314,156 @@ export function numberToWordsMarathi(amount: number): string {
   }
   return `${output} फक्त`;
 }
+
+/**
+ * Generates the standardized unique quotation PDF file name according to specification:
+ * <FirstNameFirst5Letters>_<YYYYMMDD>_<QuotationNumber>.pdf
+ * Example: ASHIS_20261001_Q-169.pdf
+ * Fallback with collision index: ASHIS_20261001_Q-169_01.pdf
+ */
+export function generateQuotationPdfFileName(
+  customerName: string | undefined,
+  quotationDate: string | undefined,
+  quotationNumber: string | undefined,
+  collisionIndex?: number,
+): string {
+  // 1. Extract first name
+  const rawCustomerName = (customerName || '').trim();
+  // Split on any whitespace to isolate first name only
+  const rawFirstName = rawCustomerName.split(/\s+/)[0] || 'CUST';
+  // Remove invalid filename characters: / \ : * ? " < > | and control chars
+  const sanitizedFirstName = rawFirstName.replace(/[\/\\:*?"<>|]/g, '').trim();
+  // Uppercase and take up to first 5 characters
+  const upperFirstName = sanitizedFirstName.toUpperCase();
+  const first5Letters = upperFirstName.slice(0, 5) || 'CUST';
+
+  // 2. Format Date: YYYYMMDD
+  let dateFormatted = '';
+  if (quotationDate && quotationDate.trim()) {
+    const rawDate = quotationDate.trim();
+    // Case 1: YYYY-MM-DD or YYYY/MM/DD
+    const isoMatch = rawDate.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if (isoMatch) {
+      const y = isoMatch[1];
+      const m = isoMatch[2].padStart(2, '0');
+      const d = isoMatch[3].padStart(2, '0');
+      dateFormatted = `${y}${m}${d}`;
+    } else {
+      // Case 2: DD/MM/YYYY or DD-MM-YYYY
+      const dmyMatch = rawDate.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+      if (dmyMatch) {
+        const d = dmyMatch[1].padStart(2, '0');
+        const m = dmyMatch[2].padStart(2, '0');
+        const y = dmyMatch[3];
+        dateFormatted = `${y}${m}${d}`;
+      } else {
+        const parsed = new Date(rawDate);
+        if (!isNaN(parsed.getTime())) {
+          const y = parsed.getFullYear().toString();
+          const m = (parsed.getMonth() + 1).toString().padStart(2, '0');
+          const d = parsed.getDate().toString().padStart(2, '0');
+          dateFormatted = `${y}${m}${d}`;
+        }
+      }
+    }
+  }
+
+  // Fallback to today's date if no valid date could be parsed
+  if (!dateFormatted || dateFormatted.length !== 8) {
+    const now = new Date();
+    const y = now.getFullYear().toString();
+    const m = (now.getMonth() + 1).toString().padStart(2, '0');
+    const d = now.getDate().toString().padStart(2, '0');
+    dateFormatted = `${y}${m}${d}`;
+  }
+
+  // 3. Format Quotation Number: Q-169
+  const rawQNumber = (quotationNumber || 'Q-001').trim();
+  const cleanedQNumber = rawQNumber.replace(/[\/\\:*?"<>|\s]/g, '_');
+
+  // 4. Construct Base File Name
+  let baseName = `${first5Letters}_${dateFormatted}_${cleanedQNumber}`;
+
+  // Optional Collision Safety suffix: _01, _02, etc.
+  if (typeof collisionIndex === 'number' && collisionIndex > 0) {
+    const suffix = collisionIndex.toString().padStart(2, '0');
+    baseName += `_${suffix}`;
+  }
+
+  return `${baseName}.pdf`;
+}
+
+/**
+ * Generates a standard Invoice PDF filename following the format:
+ * <FirstNameFirst5Letters>_<YYYYMMDD>_<InvoiceNumber>.pdf
+ * Example: ASHIS_20261001_INV-001.pdf
+ * Fallback with collision index: ASHIS_20261001_INV-001_01.pdf
+ */
+export function generateInvoicePdfFileName(
+  customerName: string | undefined,
+  invoiceDate: string | undefined,
+  invoiceNumber: string | undefined,
+  collisionIndex?: number,
+): string {
+  // 1. Extract first name
+  const rawCustomerName = (customerName || '').trim();
+  const rawFirstName = rawCustomerName.split(/\s+/)[0] || 'CUST';
+  const sanitizedFirstName = rawFirstName.replace(/[\/\\:*?"<>|]/g, '').trim();
+  const upperFirstName = sanitizedFirstName.toUpperCase();
+  const first5Letters = upperFirstName.slice(0, 5) || 'CUST';
+
+  // 2. Format Date: YYYYMMDD
+  let dateFormatted = '';
+  if (invoiceDate && invoiceDate.trim()) {
+    const rawDate = invoiceDate.trim();
+    const isoMatch = rawDate.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if (isoMatch) {
+      const y = isoMatch[1];
+      const m = isoMatch[2].padStart(2, '0');
+      const d = isoMatch[3].padStart(2, '0');
+      dateFormatted = `${y}${m}${d}`;
+    } else {
+      const dmyMatch = rawDate.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+      if (dmyMatch) {
+        const d = dmyMatch[1].padStart(2, '0');
+        const m = dmyMatch[2].padStart(2, '0');
+        const y = dmyMatch[3];
+        dateFormatted = `${y}${m}${d}`;
+      } else {
+        const parsed = new Date(rawDate);
+        if (!isNaN(parsed.getTime())) {
+          const y = parsed.getFullYear().toString();
+          const m = (parsed.getMonth() + 1).toString().padStart(2, '0');
+          const d = parsed.getDate().toString().padStart(2, '0');
+          dateFormatted = `${y}${m}${d}`;
+        }
+      }
+    }
+  }
+
+  // Fallback to today's date if no valid date could be parsed
+  if (!dateFormatted || dateFormatted.length !== 8) {
+    const now = new Date();
+    const y = now.getFullYear().toString();
+    const m = (now.getMonth() + 1).toString().padStart(2, '0');
+    const d = now.getDate().toString().padStart(2, '0');
+    dateFormatted = `${y}${m}${d}`;
+  }
+
+  // 3. Format Invoice Number: INV-001
+  const rawInvNumber = (invoiceNumber || 'INV-001').trim();
+  const cleanedInvNumber = rawInvNumber.replace(/[\/\\:*?"<>|\s]/g, '_');
+
+  // 4. Construct Base File Name
+  let baseName = `${first5Letters}_${dateFormatted}_${cleanedInvNumber}`;
+
+  // Optional Collision Safety suffix: _01, _02, etc.
+  if (typeof collisionIndex === 'number' && collisionIndex > 0) {
+    const suffix = collisionIndex.toString().padStart(2, '0');
+    baseName += `_${suffix}`;
+  }
+
+  return `${baseName}.pdf`;
+}
+
+

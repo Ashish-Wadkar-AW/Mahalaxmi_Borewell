@@ -8,9 +8,9 @@ export interface QueryResult<T = any> {
 }
 
 /**
- * Robust, audited DatabaseService.
- * Supports native SQLite with resilient persistent storage synchronization.
- * Completely eliminates initialization deadlocks, race conditions, and infinite loading loops.
+ * Robust, persistent offline-first DatabaseService.
+ * Uses native SQLite as the primary source of truth.
+ * Ensures consistent persistent storage across app restarts and Metro reloads.
  */
 class DatabaseService {
   private static instance: DatabaseService;
@@ -18,6 +18,10 @@ class DatabaseService {
   private initPromise: Promise<void> | null = null;
   private sqliteDb: any = null;
   private isUsingNativeSQLite = false;
+  private dbPath: string = '';
+
+  // Cached table columns map: table name -> Set of lowercase column names
+  private tableColumns: Map<string, Set<string>> = new Map();
 
   private memoryStore: Record<string, any[]> = {
     users: [],
@@ -44,7 +48,7 @@ class DatabaseService {
 
   /**
    * Safe, idempotent initialization with a single shared promise.
-   * Multiple simultaneous calls will await the same initialization rather than re-triggering it.
+   * Multiple simultaneous calls await the same initialization.
    */
   public async init(): Promise<void> {
     if (this.isInitialized) return;
@@ -52,200 +56,355 @@ class DatabaseService {
 
     this.initPromise = (async () => {
       try {
-        if (__DEV__) console.log('[DB] Opening database');
+        console.log('[DB][STARTUP][OPEN]');
+
         // Try initializing native SQLite if available
         try {
-          // Dynamic require to avoid crashing in environments without native op-sqlite compiled
           const opSqlite = require('@op-engineering/op-sqlite');
           if (opSqlite && typeof opSqlite.open === 'function') {
-            this.sqliteDb = opSqlite.open({ name: 'mahalaxmi_borewell.sqlite' });
+            // Stable persistent database name
+            this.sqliteDb = opSqlite.open({ name: 'mahalaxmi_borewell.db' });
             this.isUsingNativeSQLite = true;
 
-            // Execute table schemas in SQLite
-            if (this.sqliteDb) {
-              try {
-                if (__DEV__) console.log('[DB] Running migrations');
-                this.sqliteDb.executeSync('PRAGMA foreign_keys = ON;');
-                for (const ddl of CREATE_TABLES_SQL) {
-                  this.sqliteDb.executeSync(ddl);
-                }
-                // Safe migration columns for existing databases
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE bills ADD COLUMN amountInWordsMarathi TEXT;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE bills ADD COLUMN amountInWordsEnglish TEXT;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE bill_items ADD COLUMN itemSpecs TEXT;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE bills ADD COLUMN customerPhone TEXT;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync("ALTER TABLE bills ADD COLUMN paymentStatus TEXT DEFAULT 'pending';");
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE bills ADD COLUMN paidAmount REAL DEFAULT 0;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE bills ADD COLUMN remainingAmount REAL DEFAULT 0;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoices ADD COLUMN customerPhone TEXT;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoices ADD COLUMN paidAmount REAL DEFAULT 0;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoices ADD COLUMN remainingAmount REAL DEFAULT 0;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE bills ADD COLUMN quotationNumber TEXT;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoices ADD COLUMN sourceQuotationId TEXT;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoices ADD COLUMN sourceQuotationNumber TEXT;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoices ADD COLUMN borewellDepth REAL DEFAULT 0;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoices ADD COLUMN waterBearing REAL DEFAULT 0;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoices ADD COLUMN boreSize REAL DEFAULT 0;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoices ADD COLUMN deliveryDays INTEGER DEFAULT 7;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoices ADD COLUMN amountInWords TEXT;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoices ADD COLUMN amountInWordsMarathi TEXT;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoices ADD COLUMN amountInWordsEnglish TEXT;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoice_items ADD COLUMN itemSpecs TEXT;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoice_items ADD COLUMN particularsMr TEXT;');
-                } catch {}
-                try {
-                  this.sqliteDb.executeSync('ALTER TABLE invoice_items ADD COLUMN particularsEn TEXT;');
-                } catch {}
-
-                if (__DEV__) {
-                  console.log('[DB] Migration completed');
-                  console.log('[DB] Auth table verified');
-                }
-              } catch (ddlError) {
-                console.warn('Native SQLite schema execution warning:', ddlError);
-              }
+            try {
+              this.dbPath =
+                typeof this.sqliteDb.getDbPath === 'function'
+                  ? this.sqliteDb.getDbPath()
+                  : 'mahalaxmi_borewell.db';
+            } catch {
+              this.dbPath = 'mahalaxmi_borewell.db';
             }
           }
         } catch (sqliteErr) {
-          // Native SQLite not available or bridge not loaded; using high-performance persistent store
+          console.warn('[DB] Native SQLite load notice:', sqliteErr);
           this.isUsingNativeSQLite = false;
           this.sqliteDb = null;
         }
 
-        if (__DEV__) console.log('[DB] Database opened');
+        console.log('[DB][STARTUP][PATH]', this.dbPath || 'in-memory/storage');
 
-        // Hydrate persistent storage
-        try {
-          const stored = await AsyncStorage.getItem('@mahalaxmi_db_v1');
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            this.memoryStore = { ...this.memoryStore, ...parsed };
+        // Check if database already had tables prior to this run
+        let dbExisted = false;
+        if (this.isUsingNativeSQLite && this.sqliteDb) {
+          try {
+            const tableCheck = this.sqliteDb.executeSync(
+              "SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name='bills';",
+            );
+            const cnt = tableCheck?.rows?.[0]?.cnt ?? 0;
+            dbExisted = Number(cnt) > 0;
+          } catch {
+            dbExisted = false;
+          }
+        }
+        console.log('[DB][STARTUP][EXISTS]', dbExisted);
 
-            // Ensure safe defaults for legacy records
-            if (Array.isArray(this.memoryStore['invoices'])) {
-              this.memoryStore['invoices'] = this.memoryStore['invoices'].map((inv: any) => {
-                const total = Number(inv.grandTotal) || 0;
-                const isPaid = inv.paymentStatus === 'paid';
-                return {
-                  ...inv,
-                  customerPhone: inv.customerPhone || '',
-                  paidAmount: typeof inv.paidAmount === 'number' ? inv.paidAmount : (isPaid ? total : 0),
-                  remainingAmount: typeof inv.remainingAmount === 'number' ? inv.remainingAmount : (isPaid ? 0 : total),
-                  sourceQuotationId: inv.sourceQuotationId || inv.billId || '',
-                  sourceQuotationNumber: inv.sourceQuotationNumber || '',
-                  borewellDepth: typeof inv.borewellDepth === 'number' ? inv.borewellDepth : 0,
-                  waterBearing: typeof inv.waterBearing === 'number' ? inv.waterBearing : 0,
-                  boreSize: typeof inv.boreSize === 'number' ? inv.boreSize : 0,
-                  deliveryDays: typeof inv.deliveryDays === 'number' ? inv.deliveryDays : 7,
-                };
-              });
+        // Execute table schemas in SQLite non-destructively
+        console.log('[DB][STARTUP][SCHEMA]');
+        if (this.isUsingNativeSQLite && this.sqliteDb) {
+          try {
+            this.sqliteDb.executeSync('PRAGMA foreign_keys = ON;');
+            for (const ddl of CREATE_TABLES_SQL) {
+              this.sqliteDb.executeSync(ddl);
             }
-            if (Array.isArray(this.memoryStore['bills'])) {
-              this.memoryStore['bills'] = this.memoryStore['bills'].map((b: any) => {
-                const total = Number(b.totalAmount) || 0;
-                const isPaid = b.paymentStatus === 'paid';
-                const qNum = b.quotationNumber || (b.billNumber ? (b.billNumber.startsWith('Q-') ? b.billNumber : `Q-${b.billNumber.padStart(3, '0')}`) : 'Q-001');
-                return {
-                  ...b,
-                  quotationNumber: qNum,
-                  customerPhone: b.customerPhone || '',
-                  status: b.status || 'saved',
-                  paymentStatus: b.paymentStatus || 'pending',
-                  paidAmount: typeof b.paidAmount === 'number' ? b.paidAmount : (isPaid ? total : 0),
-                  remainingAmount: typeof b.remainingAmount === 'number' ? b.remainingAmount : (isPaid ? 0 : total),
-                };
-              });
+          } catch (ddlError) {
+            console.warn('[DB] Schema DDL warning:', ddlError);
+          }
+        }
+
+        // Apply safe non-destructive migrations to preserve all existing records
+        console.log('[DB][STARTUP][MIGRATION]');
+        if (this.isUsingNativeSQLite && this.sqliteDb) {
+          const migrations = [
+            'ALTER TABLE bills ADD COLUMN quotationNumber TEXT;',
+            'ALTER TABLE bills ADD COLUMN customerPhone TEXT;',
+            'ALTER TABLE bills ADD COLUMN customerAddress TEXT;',
+            'ALTER TABLE bills ADD COLUMN vehicleNumber TEXT;',
+            'ALTER TABLE bills ADD COLUMN vehicleType TEXT;',
+            'ALTER TABLE bills ADD COLUMN vehicleDetails TEXT;',
+            'ALTER TABLE bills ADD COLUMN vehicle TEXT;',
+            "ALTER TABLE bills ADD COLUMN paymentStatus TEXT DEFAULT 'pending';",
+            'ALTER TABLE bills ADD COLUMN paidAmount REAL DEFAULT 0;',
+            'ALTER TABLE bills ADD COLUMN remainingAmount REAL DEFAULT 0;',
+            'ALTER TABLE bills ADD COLUMN amountInWordsMarathi TEXT;',
+            'ALTER TABLE bills ADD COLUMN amountInWordsEnglish TEXT;',
+            'ALTER TABLE bills ADD COLUMN pdfUri TEXT;',
+            'ALTER TABLE bills ADD COLUMN pdfFileName TEXT;',
+            'ALTER TABLE bill_items ADD COLUMN itemSpecs TEXT;',
+            'ALTER TABLE invoices ADD COLUMN customerPhone TEXT;',
+            'ALTER TABLE invoices ADD COLUMN customerAddress TEXT;',
+            'ALTER TABLE invoices ADD COLUMN sourceQuotationId TEXT;',
+            'ALTER TABLE invoices ADD COLUMN sourceQuotationNumber TEXT;',
+            'ALTER TABLE invoices ADD COLUMN borewellDepth REAL DEFAULT 0;',
+            'ALTER TABLE invoices ADD COLUMN waterBearing REAL DEFAULT 0;',
+            'ALTER TABLE invoices ADD COLUMN boreSize REAL DEFAULT 0;',
+            'ALTER TABLE invoices ADD COLUMN deliveryDays INTEGER DEFAULT 7;',
+            'ALTER TABLE invoices ADD COLUMN amountInWords TEXT;',
+            'ALTER TABLE invoices ADD COLUMN amountInWordsMarathi TEXT;',
+            'ALTER TABLE invoices ADD COLUMN amountInWordsEnglish TEXT;',
+            'ALTER TABLE invoices ADD COLUMN paidAmount REAL DEFAULT 0;',
+            'ALTER TABLE invoices ADD COLUMN remainingAmount REAL DEFAULT 0;',
+            'ALTER TABLE invoices ADD COLUMN pdfUri TEXT;',
+            'ALTER TABLE invoices ADD COLUMN pdfFileName TEXT;',
+            'ALTER TABLE invoice_items ADD COLUMN itemSpecs TEXT;',
+            'ALTER TABLE invoice_items ADD COLUMN particularsMr TEXT;',
+            'ALTER TABLE invoice_items ADD COLUMN particularsEn TEXT;',
+            'ALTER TABLE customers ADD COLUMN updatedAt TEXT;',
+          ];
+
+          for (const mig of migrations) {
+            try {
+              this.sqliteDb.executeSync(mig);
+            } catch {
+              // Column already exists - expected for updated schema
             }
           }
-          if (__DEV__) console.log('[DB] Auth table verified');
-        } catch (storageErr) {
-          console.warn('Persistent storage hydration warning:', storageErr);
         }
 
-        // Verify or initialize schema version (DIRECT ACCESS - no ensureInitialized recursion!)
-        const settings = this.memoryStore['settings'] || [];
-        const versionEntry = settings.find((s: any) => s.key === 'schema_version');
-        if (!versionEntry) {
-          settings.push({
-            key: 'schema_version',
-            value: SCHEMA_VERSION.toString(),
-            updatedAt: new Date().toISOString(),
-          });
-          this.memoryStore['settings'] = settings;
+        // Cache actual column names from SQLite for each table
+        await this.refreshTableColumnsCache();
+
+        // One-time legacy migration: if SQLite is empty but AsyncStorage had data
+        if (this.isUsingNativeSQLite && this.sqliteDb) {
+          try {
+            const billCountRes = this.sqliteDb.executeSync(
+              'SELECT COUNT(*) as c FROM bills;',
+            );
+            const sqliteBillCount = Number(billCountRes?.rows?.[0]?.c ?? 0);
+
+            if (sqliteBillCount === 0) {
+              const legacyJson = await AsyncStorage.getItem('@mahalaxmi_db_v1');
+              if (legacyJson) {
+                const legacyData = JSON.parse(legacyJson);
+                await this.migrateLegacyDataToSqlite(legacyData);
+              }
+            }
+          } catch (migrateErr) {
+            console.warn('[DB] Legacy migration check notice:', migrateErr);
+          }
+        } else {
+          // Fallback AsyncStorage hydration
+          try {
+            const stored = await AsyncStorage.getItem('@mahalaxmi_db_v1');
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              this.memoryStore = { ...this.memoryStore, ...parsed };
+            }
+          } catch (storageErr) {
+            console.warn('[DB] AsyncStorage hydration warning:', storageErr);
+          }
         }
 
-        // Initialize default company profile if empty (DIRECT ACCESS - no recursion!)
-        const profiles = this.memoryStore['profile'] || [];
-        if (profiles.length === 0) {
-          profiles.push({
-            id: 'default_profile',
-            name: 'Ashish',
-            mobileNumber: '8379918585',
-            email: 'mahalaxmiborewells@gmail.com',
-            businessName: 'Mahalaxmi Borewell Electricals & Mechanicals',
-            businessAddress: 'At Post Hanbarwadi, Taluka Karveer, District Kolhapur',
-            gstNumber: '',
-            updatedAt: new Date().toISOString(),
-          });
-          this.memoryStore['profile'] = profiles;
-        }
+        // Ensure default company profile exists
+        await this.ensureDefaultProfile();
 
-        // Persist default state
-        await this.persistInternal();
-        if (__DEV__) console.log('[DB] Database initialization completed');
+        // Mark completion
+        console.log('[DB][STARTUP][COMPLETE]');
+
+        // Persistence Count Verification Checks
+        await this.logPersistenceCounts();
       } catch (err) {
-        if (__DEV__) console.error('[DB] Database initialization failed:', err);
+        console.error('[DB] Startup initialization failed:', err);
       } finally {
-        // ALWAYS mark initialized to prevent the application from hanging
         this.isInitialized = true;
         this.initPromise = null;
       }
     })();
 
     return this.initPromise;
+  }
+
+  /**
+   * Refreshes the cached set of valid column names for every database table
+   */
+  private async refreshTableColumnsCache(): Promise<void> {
+    if (!this.isUsingNativeSQLite || !this.sqliteDb) return;
+
+    const tables = [
+      'users',
+      'customers',
+      'bills',
+      'bill_items',
+      'invoices',
+      'invoice_items',
+      'income',
+      'expenses',
+      'reminders',
+      'profile',
+      'settings',
+    ];
+
+    for (const table of tables) {
+      try {
+        const info = this.sqliteDb.executeSync(`PRAGMA table_info(${table});`);
+        const rows = Array.isArray(info?.rows)
+          ? info.rows
+          : Array.isArray(info?.rows?._array)
+          ? info.rows._array
+          : [];
+        const cols = new Set<string>();
+        for (const row of rows) {
+          if (row.name) {
+            cols.add(String(row.name).toLowerCase());
+          }
+        }
+        this.tableColumns.set(table, cols);
+      } catch {
+        // Fallback or ignore
+      }
+    }
+  }
+
+  /**
+   * Filters any input record to ONLY include columns that physically exist in the SQLite table.
+   * Excludes related arrays (like items) and objects (like bill) to prevent SQLite syntax errors.
+   */
+  private sanitizeRecordForTable(table: string, record: any): { keys: string[]; values: any[] } {
+    const validCols = this.tableColumns.get(table);
+    const keys: string[] = [];
+    const values: any[] = [];
+
+    for (const [k, v] of Object.entries(record)) {
+      // Exclude nested objects and arrays that belong in separate tables
+      if (k === 'items' || k === 'bill' || Array.isArray(v)) {
+        continue;
+      }
+
+      // If we have cached columns, only include matching columns
+      if (validCols && validCols.size > 0) {
+        if (!validCols.has(k.toLowerCase())) {
+          continue;
+        }
+      }
+
+      keys.push(k);
+      if (v === undefined) {
+        values.push(null);
+      } else if (typeof v === 'boolean') {
+        values.push(v ? 1 : 0);
+      } else {
+        values.push(v);
+      }
+    }
+
+    return { keys, values };
+  }
+
+  /**
+   * Safe migration of legacy records from AsyncStorage into SQLite
+   */
+  private async migrateLegacyDataToSqlite(legacyData: Record<string, any[]>): Promise<void> {
+    if (!legacyData || !this.isUsingNativeSQLite || !this.sqliteDb) return;
+
+    console.log('[DB] Migrating legacy records into SQLite...');
+    const tables = [
+      'users',
+      'customers',
+      'bills',
+      'bill_items',
+      'invoices',
+      'invoice_items',
+      'income',
+      'expenses',
+      'reminders',
+      'profile',
+      'settings',
+    ];
+
+    for (const table of tables) {
+      const records = legacyData[table];
+      if (Array.isArray(records) && records.length > 0) {
+        for (const rec of records) {
+          try {
+            const { keys, values } = this.sanitizeRecordForTable(table, rec);
+            if (keys.length > 0) {
+              const placeholders = keys.map(() => '?').join(', ');
+              this.sqliteDb.executeSync(
+                `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders});`,
+                values,
+              );
+            }
+          } catch (migItemErr) {
+            console.warn(`[DB] Legacy migration item warning for ${table}:`, migItemErr);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Ensures default company profile exists without recursion
+   */
+  private async ensureDefaultProfile(): Promise<void> {
+    const defaultProfile = {
+      id: 'default_profile',
+      name: 'Ashish',
+      mobileNumber: '8379918585',
+      email: 'mahalaxmiborewells@gmail.com',
+      businessName: 'Mahalaxmi Borewell Electricals & Mechanicals',
+      businessAddress: 'At Post Hanbarwadi, Taluka Karveer, District Kolhapur',
+      gstNumber: '',
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (this.isUsingNativeSQLite && this.sqliteDb) {
+      try {
+        const res = this.sqliteDb.executeSync('SELECT COUNT(*) as c FROM profile;');
+        const count = Number(res?.rows?.[0]?.c ?? 0);
+        if (count === 0) {
+          const { keys, values } = this.sanitizeRecordForTable('profile', defaultProfile);
+          const placeholders = keys.map(() => '?').join(', ');
+          this.sqliteDb.executeSync(
+            `INSERT INTO profile (${keys.join(', ')}) VALUES (${placeholders});`,
+            values,
+          );
+        }
+      } catch {}
+    } else {
+      if (!this.memoryStore['profile'] || this.memoryStore['profile'].length === 0) {
+        this.memoryStore['profile'] = [defaultProfile];
+        await this.persistInternal();
+      }
+    }
+  }
+
+  /**
+   * Logs persistence verification counts required by audit
+   */
+  private async logPersistenceCounts(): Promise<void> {
+    let billsCount = 0;
+    let quotationsCount = 0;
+    let invoicesCount = 0;
+    let customersCount = 0;
+
+    if (this.isUsingNativeSQLite && this.sqliteDb) {
+      try {
+        const bRes = this.sqliteDb.executeSync('SELECT COUNT(*) as c FROM bills;');
+        billsCount = Number(bRes?.rows?.[0]?.c ?? 0);
+
+        const qRes = this.sqliteDb.executeSync(
+          "SELECT COUNT(*) as c FROM bills WHERE (quotationNumber IS NOT NULL AND quotationNumber != '') OR billNumber LIKE 'Q-%';",
+        );
+        quotationsCount = Number(qRes?.rows?.[0]?.c ?? 0);
+
+        const iRes = this.sqliteDb.executeSync('SELECT COUNT(*) as c FROM invoices;');
+        invoicesCount = Number(iRes?.rows?.[0]?.c ?? 0);
+
+        const cRes = this.sqliteDb.executeSync('SELECT COUNT(*) as c FROM customers;');
+        customersCount = Number(cRes?.rows?.[0]?.c ?? 0);
+      } catch (cntErr) {
+        console.warn('[DB] Persistence count query warning:', cntErr);
+      }
+    } else {
+      billsCount = (this.memoryStore['bills'] || []).length;
+      quotationsCount = billsCount;
+      invoicesCount = (this.memoryStore['invoices'] || []).length;
+      customersCount = (this.memoryStore['customers'] || []).length;
+    }
+
+    console.log('[DB][CHECK][BILLS_COUNT]', billsCount);
+    console.log('[DB][CHECK][QUOTATIONS_COUNT]', quotationsCount);
+    console.log('[DB][CHECK][INVOICES_COUNT]', invoicesCount);
+    console.log('[DB][CHECK][CUSTOMERS_COUNT]', customersCount);
   }
 
   private async persistInternal(): Promise<void> {
@@ -270,7 +429,6 @@ class DatabaseService {
   public async getAll<T>(table: string): Promise<T[]> {
     await this.ensureInitialized();
 
-    // If native SQLite is active, query native database
     if (this.isUsingNativeSQLite && this.sqliteDb) {
       try {
         const result = this.sqliteDb.executeSync(`SELECT * FROM ${table};`);
@@ -280,10 +438,12 @@ class DatabaseService {
           ? result.rows._array
           : null;
         if (rows) {
-          return rows;
+          // Mirror in memory store
+          this.memoryStore[table] = JSON.parse(JSON.stringify(rows));
+          return rows as T[];
         }
-      } catch {
-        // Fall back to memoryStore
+      } catch (err) {
+        console.error(`[DB] Error fetching all from ${table}:`, err);
       }
     }
 
@@ -306,10 +466,11 @@ class DatabaseService {
           ? result.rows._array
           : null;
         if (rows && rows.length > 0) {
-          return rows[0];
+          return rows[0] as T;
         }
-      } catch {
-        // Fall back to memoryStore
+        return null;
+      } catch (err) {
+        console.error(`[DB] Error fetching by id from ${table}:`, err);
       }
     }
 
@@ -320,10 +481,28 @@ class DatabaseService {
 
   public async insert<T extends { id: string }>(table: string, record: T): Promise<T> {
     await this.ensureInitialized();
+
+    // 1. Commit to SQLite as primary master
+    if (this.isUsingNativeSQLite && this.sqliteDb) {
+      const { keys, values } = this.sanitizeRecordForTable(table, record);
+      if (keys.length > 0) {
+        const placeholders = keys.map(() => '?').join(', ');
+        try {
+          this.sqliteDb.executeSync(
+            `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders});`,
+            values,
+          );
+        } catch (nativeErr) {
+          console.error(`[DB][INSERT][ERROR] Failed to insert into ${table}:`, nativeErr);
+          throw nativeErr;
+        }
+      }
+    }
+
+    // 2. Mirror in memory store
     if (!this.memoryStore[table]) {
       this.memoryStore[table] = [];
     }
-
     const existingIndex = this.memoryStore[table].findIndex(
       (r: any) => r.id === record.id,
     );
@@ -333,22 +512,9 @@ class DatabaseService {
       this.memoryStore[table].push({ ...record });
     }
 
-    // Sync with native SQLite if active
-    if (this.isUsingNativeSQLite && this.sqliteDb) {
-      try {
-        const keys = Object.keys(record);
-        const placeholders = keys.map(() => '?').join(', ');
-        const values = keys.map(k => (record as any)[k]);
-        this.sqliteDb.executeSync(
-          `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders});`,
-          values,
-        );
-      } catch (nativeErr) {
-        console.warn(`Native SQLite insert failed for table ${table}:`, nativeErr);
-      }
-    }
+    // 3. Mirror to persistent storage asynchronously
+    this.persistInternal().catch(() => {});
 
-    await this.persistInternal();
     return record;
   }
 
@@ -357,10 +523,31 @@ class DatabaseService {
     records: T[],
   ): Promise<T[]> {
     await this.ensureInitialized();
+    if (records.length === 0) return records;
+
+    // 1. Commit to SQLite
+    if (this.isUsingNativeSQLite && this.sqliteDb) {
+      for (const record of records) {
+        const { keys, values } = this.sanitizeRecordForTable(table, record);
+        if (keys.length > 0) {
+          const placeholders = keys.map(() => '?').join(', ');
+          try {
+            this.sqliteDb.executeSync(
+              `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders});`,
+              values,
+            );
+          } catch (batchErr) {
+            console.error(`[DB][INSERT_MANY][ERROR] Failed for ${table}:`, batchErr);
+            throw batchErr;
+          }
+        }
+      }
+    }
+
+    // 2. Mirror in memory store
     if (!this.memoryStore[table]) {
       this.memoryStore[table] = [];
     }
-
     for (const record of records) {
       const idx = this.memoryStore[table].findIndex((r: any) => r.id === record.id);
       if (idx >= 0) {
@@ -368,23 +555,9 @@ class DatabaseService {
       } else {
         this.memoryStore[table].push({ ...record });
       }
-
-      if (this.isUsingNativeSQLite && this.sqliteDb) {
-        try {
-          const keys = Object.keys(record);
-          const placeholders = keys.map(() => '?').join(', ');
-          const values = keys.map(k => (record as any)[k]);
-          this.sqliteDb.executeSync(
-            `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders});`,
-            values,
-          );
-        } catch {
-          // Ignore
-        }
-      }
     }
 
-    await this.persistInternal();
+    this.persistInternal().catch(() => {});
     return records;
   }
 
@@ -394,53 +567,80 @@ class DatabaseService {
     updates: Partial<T>,
   ): Promise<T | null> {
     await this.ensureInitialized();
-    const rows = this.memoryStore[table] || [];
-    const index = rows.findIndex((r: any) => r.id === id);
-    if (index === -1) return null;
 
-    rows[index] = {
-      ...rows[index],
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-
+    // 1. Commit to SQLite
     if (this.isUsingNativeSQLite && this.sqliteDb) {
-      try {
-        const keys = Object.keys(updates);
+      const { keys, values } = this.sanitizeRecordForTable(table, updates);
+      if (keys.length > 0) {
         const setClause = keys.map(k => `${k} = ?`).join(', ');
-        const values = [...keys.map(k => (updates as any)[k]), id];
-        this.sqliteDb.executeSync(
-          `UPDATE ${table} SET ${setClause}, updatedAt = CURRENT_TIMESTAMP WHERE id = ?;`,
-          values,
-        );
-      } catch {
-        // Ignore
+        try {
+          this.sqliteDb.executeSync(
+            `UPDATE ${table} SET ${setClause}, updatedAt = CURRENT_TIMESTAMP WHERE id = ?;`,
+            [...values, id],
+          );
+        } catch (updateErr) {
+          console.error(`[DB][UPDATE][ERROR] Failed to update ${table}:`, updateErr);
+          throw updateErr;
+        }
       }
     }
 
-    await this.persistInternal();
-    return JSON.parse(JSON.stringify(rows[index]));
+    // 2. Mirror in memory store
+    const rows = this.memoryStore[table] || [];
+    const index = rows.findIndex((r: any) => r.id === id);
+    if (index >= 0) {
+      rows[index] = {
+        ...rows[index],
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    this.persistInternal().catch(() => {});
+
+    // Read back fresh record directly from SQLite
+    return this.getById<T>(table, id);
   }
 
   public async delete(table: string, id: string): Promise<boolean> {
     await this.ensureInitialized();
-    const rows = this.memoryStore[table] || [];
-    const initialLength = rows.length;
-    this.memoryStore[table] = rows.filter((r: any) => r.id !== id);
 
     if (this.isUsingNativeSQLite && this.sqliteDb) {
       try {
         this.sqliteDb.executeSync(`DELETE FROM ${table} WHERE id = ?;`, [id]);
-      } catch {
-        // Ignore
+      } catch (delErr) {
+        console.error(`[DB][DELETE][ERROR] Failed to delete from ${table}:`, delErr);
+        throw delErr;
       }
     }
 
-    if (this.memoryStore[table].length !== initialLength) {
-      await this.persistInternal();
-      return true;
+    const rows = this.memoryStore[table] || [];
+    const initialLength = rows.length;
+    this.memoryStore[table] = rows.filter((r: any) => r.id !== id);
+    this.persistInternal().catch(() => {});
+
+    return true;
+  }
+
+  public async deleteWhere(table: string, column: string, value: any): Promise<boolean> {
+    await this.ensureInitialized();
+
+    if (this.isUsingNativeSQLite && this.sqliteDb) {
+      try {
+        this.sqliteDb.executeSync(`DELETE FROM ${table} WHERE ${column} = ?;`, [value]);
+      } catch (delErr) {
+        console.error(`[DB][DELETE_WHERE][ERROR] Failed for ${table}:`, delErr);
+        throw delErr;
+      }
     }
-    return false;
+
+    if (this.memoryStore[table]) {
+      this.memoryStore[table] = this.memoryStore[table].filter(
+        (r: any) => r[column] !== value,
+      );
+    }
+    this.persistInternal().catch(() => {});
+    return true;
   }
 
   /**
@@ -456,7 +656,7 @@ class DatabaseService {
         this.sqliteDb.executeSync('BEGIN TRANSACTION;');
         const result = await callback();
         this.sqliteDb.executeSync('COMMIT;');
-        await this.persistInternal();
+        this.persistInternal().catch(() => {});
         return result;
       } catch (err) {
         try {
@@ -470,7 +670,7 @@ class DatabaseService {
     } else {
       try {
         const result = await callback();
-        await this.persistInternal();
+        this.persistInternal().catch(() => {});
         return result;
       } catch (err) {
         this.memoryStore = JSON.parse(snapshot);
@@ -482,12 +682,28 @@ class DatabaseService {
   // --- Profile Operations ---
   public async getProfile(): Promise<any | null> {
     await this.ensureInitialized();
+    if (this.isUsingNativeSQLite && this.sqliteDb) {
+      try {
+        const res = this.sqliteDb.executeSync('SELECT * FROM profile LIMIT 1;');
+        if (res?.rows && res.rows.length > 0) {
+          return res.rows[0];
+        }
+      } catch {}
+    }
     const profiles = this.memoryStore['profile'] || [];
     return profiles[0] || null;
   }
 
   public async saveProfile(profile: any): Promise<any> {
     await this.ensureInitialized();
+    if (this.isUsingNativeSQLite && this.sqliteDb) {
+      const { keys, values } = this.sanitizeRecordForTable('profile', profile);
+      const placeholders = keys.map(() => '?').join(', ');
+      this.sqliteDb.executeSync(
+        `INSERT OR REPLACE INTO profile (${keys.join(', ')}) VALUES (${placeholders});`,
+        values,
+      );
+    }
     this.memoryStore['profile'] = [profile];
     await this.persistInternal();
     return profile;
@@ -496,6 +712,17 @@ class DatabaseService {
   // --- Settings Key/Value ---
   public async getSetting(key: string): Promise<string | null> {
     await this.ensureInitialized();
+    if (this.isUsingNativeSQLite && this.sqliteDb) {
+      try {
+        const res = this.sqliteDb.executeSync(
+          'SELECT value FROM settings WHERE key = ? LIMIT 1;',
+          [key],
+        );
+        if (res?.rows && res.rows.length > 0) {
+          return res.rows[0].value;
+        }
+      } catch {}
+    }
     const settings = this.memoryStore['settings'] || [];
     const entry = settings.find((s: any) => s.key === key);
     return entry ? entry.value : null;
@@ -503,14 +730,23 @@ class DatabaseService {
 
   public async setSetting(key: string, value: string): Promise<void> {
     await this.ensureInitialized();
+    const now = new Date().toISOString();
+    if (this.isUsingNativeSQLite && this.sqliteDb) {
+      try {
+        this.sqliteDb.executeSync(
+          'INSERT OR REPLACE INTO settings (key, value, updatedAt) VALUES (?, ?, ?);',
+          [key, value, now],
+        );
+      } catch {}
+    }
     if (!this.memoryStore['settings']) this.memoryStore['settings'] = [];
     const settings = this.memoryStore['settings'];
     const idx = settings.findIndex((s: any) => s.key === key);
     if (idx >= 0) {
       settings[idx].value = value;
-      settings[idx].updatedAt = new Date().toISOString();
+      settings[idx].updatedAt = now;
     } else {
-      settings.push({ key, value, updatedAt: new Date().toISOString() });
+      settings.push({ key, value, updatedAt: now });
     }
     await this.persistInternal();
   }
@@ -518,16 +754,40 @@ class DatabaseService {
   // --- Raw Export / Import for Safe Backup ---
   public async exportAllData(): Promise<Record<string, any[]>> {
     await this.ensureInitialized();
-    return JSON.parse(JSON.stringify(this.memoryStore));
+    const tables = [
+      'customers',
+      'bills',
+      'bill_items',
+      'invoices',
+      'invoice_items',
+      'income',
+      'expenses',
+      'reminders',
+      'profile',
+      'settings',
+    ];
+    const exportResult: Record<string, any[]> = {};
+    for (const table of tables) {
+      exportResult[table] = await this.getAll(table);
+    }
+    return exportResult;
   }
 
   public async importAllData(data: Record<string, any[]>): Promise<void> {
     await this.ensureInitialized();
     return this.runTransaction(async () => {
-      this.memoryStore = {
-        ...this.memoryStore,
-        ...data,
-      };
+      for (const [table, records] of Object.entries(data)) {
+        if (Array.isArray(records)) {
+          // Clear and reload
+          if (this.isUsingNativeSQLite && this.sqliteDb) {
+            this.sqliteDb.executeSync(`DELETE FROM ${table};`);
+          }
+          this.memoryStore[table] = [];
+          if (records.length > 0) {
+            await this.insertMany(table, records);
+          }
+        }
+      }
     });
   }
 }

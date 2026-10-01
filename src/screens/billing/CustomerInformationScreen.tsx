@@ -35,6 +35,18 @@ export const CustomerInformationScreen: React.FC = () => {
 
   const [nameError, setNameError] = useState('');
 
+  React.useEffect(() => {
+    console.log('[BILLING][NEW][SCREEN]', {
+      screen: 'CustomerInformation',
+      editingQuotationId: billing.editingQuotationId,
+    });
+    if (!billing.editingQuotationId) {
+      console.log('[BILLING][NEW][START]', {
+        billNumber: billing.billNumber,
+      });
+    }
+  }, [billing.editingQuotationId]);
+
   const handleNext = () => {
     setNameError('');
     if (!billing.customerName.trim()) {

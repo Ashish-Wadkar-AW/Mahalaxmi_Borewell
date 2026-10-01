@@ -2,9 +2,11 @@ import { db } from '../DatabaseService';
 import {
   BillEntity,
   BillItemEntity,
+  CustomerEntity,
   InvoiceEntity,
   InvoiceItemEntity,
 } from '../../types/database';
+import { CustomerRepository } from './CustomerRepository';
 
 export class BillRepository {
   public static async getAllBills(): Promise<BillEntity[]> {
@@ -106,6 +108,47 @@ export class BillRepository {
         remainingAmount,
       };
 
+      // Ensure customer exists in customers table
+      let verifiedCustomer = billToSave.customerId
+        ? await db.getById<CustomerEntity>('customers', billToSave.customerId)
+        : null;
+
+      if (!verifiedCustomer) {
+        if (billToSave.customerId && billToSave.customerId.trim() !== '') {
+          verifiedCustomer = await CustomerRepository.createCustomer({
+            id: billToSave.customerId,
+            name: billToSave.customerName,
+            mobileNumber: billToSave.customerPhone,
+            address: billToSave.customerAddress,
+          });
+        } else {
+          verifiedCustomer = await CustomerRepository.findOrCreateCustomer(
+            billToSave.customerName,
+            billToSave.customerPhone,
+            billToSave.customerAddress,
+          );
+        }
+        billToSave.customerId = verifiedCustomer.id;
+      }
+
+      console.log('[BILL][CUSTOMER][VERIFY]', {
+        customerId: billToSave.customerId,
+        exists: !!verifiedCustomer,
+      });
+
+      console.log('[BILL][INSERT][VALIDATION]', {
+        id: billToSave.id,
+        customerId: billToSave.customerId,
+        customerName: billToSave.customerName,
+        totalAmount: billToSave.totalAmount,
+        paymentStatus: billToSave.paymentStatus,
+      });
+
+      if (!verifiedCustomer || !billToSave.customerId) {
+        console.error('[BILL][INSERT][VALIDATION_ERROR] customerId is missing');
+        throw new Error('Customer ID is required before saving bill');
+      }
+
       console.log('========== BILL INSERT REQUEST ==========');
       console.log('[BILL][INSERT][REQUEST]', {
         id: billToSave.id,
@@ -127,7 +170,15 @@ export class BillRepository {
 
       const storedBill = await db.getById<BillEntity>('bills', billToSave.id);
       console.log('========== BILL INSERT READ BACK ==========');
-      console.log('[BILL][INSERT][READBACK]', storedBill);
+      console.log('[BILL][INSERT][READBACK]', {
+        id: storedBill?.id,
+        customerId: storedBill?.customerId,
+        customerName: storedBill?.customerName,
+        totalAmount: storedBill?.totalAmount,
+        paymentStatus: storedBill?.paymentStatus,
+        paidAmount: storedBill?.paidAmount,
+        remainingAmount: storedBill?.remainingAmount,
+      });
 
       // 2. Insert Bill Items
       await db.insertMany<BillItemEntity>('bill_items', items);
@@ -139,13 +190,13 @@ export class BillRepository {
       const invoice: InvoiceEntity = {
         id: invoiceId,
         invoiceNumber,
-        billId: bill.id,
-        sourceQuotationId: bill.id,
-        sourceQuotationNumber: bill.quotationNumber || bill.billNumber,
-        customerId: bill.customerId || '',
-        customerName: bill.customerName,
-        customerPhone: bill.customerPhone || '',
-        customerAddress: bill.customerAddress,
+        billId: billToSave.id,
+        sourceQuotationId: billToSave.id,
+        sourceQuotationNumber: billToSave.quotationNumber || billToSave.billNumber,
+        customerId: billToSave.customerId,
+        customerName: billToSave.customerName,
+        customerPhone: billToSave.customerPhone || '',
+        customerAddress: billToSave.customerAddress,
         date: bill.date,
         borewellDepth: bill.borewellDepth || 0,
         waterBearing: bill.waterBearing || 0,

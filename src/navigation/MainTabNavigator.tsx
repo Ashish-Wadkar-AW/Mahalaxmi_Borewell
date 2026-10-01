@@ -68,6 +68,13 @@ export const MainTabNavigator: React.FC = () => {
         name="BillingTab"
         component={BillingStackNavigator}
         options={{ tabBarLabel: isMarathi ? 'बिलिंग' : 'Billing' }}
+        listeners={({ navigation }) => ({
+          tabPress: () => {
+            navigation.navigate('BillingTab', {
+              screen: 'CustomerInformation',
+            });
+          },
+        })}
       />
       <Tab.Screen
         name="QuotationTab"

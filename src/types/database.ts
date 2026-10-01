@@ -11,9 +11,10 @@ export interface UserEntity {
 export interface CustomerEntity {
   id: string;
   name: string;
-  mobileNumber: string;
-  address: string;
+  mobileNumber?: string;
+  address?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface BillItemEntity {
@@ -78,6 +79,8 @@ export interface BillEntity {
   paymentStatus?: 'pending' | 'paid' | 'partial';
   paidAmount?: number;
   remainingAmount?: number;
+  pdfUri?: string;
+  pdfFileName?: string;
   createdAt: string;
   updatedAt: string;
   items?: BillItemEntity[];
@@ -123,6 +126,8 @@ export interface InvoiceEntity {
   paidAmount?: number;
   remainingAmount?: number;
   notes: string;
+  pdfUri?: string;
+  pdfFileName?: string;
   createdAt: string;
   updatedAt: string;
   items?: InvoiceItemEntity[];

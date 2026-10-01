@@ -226,7 +226,7 @@ export const QuotationDocumentView: React.FC<QuotationDocumentViewProps> = ({
         <Text style={styles.quotationTitle}>
           {isQuotation
             ? isMarathi ? 'कोटेशन' : 'QUOTATION'
-            : isMarathi ? 'कोटेशन' : 'TAX INVOICE'}
+            : isMarathi ? 'टॅक्स इनव्हॉइस' : 'TAX INVOICE'}
         </Text>
       </View>
 
